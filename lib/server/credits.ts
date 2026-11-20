@@ -7,6 +7,8 @@ import { db } from "./db";
  */
 
 export const SIGNUP_BONUS = 200; // 新用户赠送，大约够做一次案件评估
+/** 每天（北京时间 0 点重置）只有前这么多个新注册用户拿得到赠送 */
+export const SIGNUP_DAILY_LIMIT = Number(process.env.SIGNUP_DAILY_LIMIT) || 100;
 export const SCHOLAR_COST = 20; // 一键获取学术数据
 const MARKUP = Number(process.env.CREDIT_MARKUP) || 40; // 成本之上的加价倍数
 
@@ -65,4 +67,22 @@ export function history(userId: string, limit = 30) {
   return db()
     .prepare("SELECT delta, reason, created_at AS at FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT ?")
     .all(userId, limit) as { delta: number; reason: string; at: number }[];
+}
+
+/** 北京时间今天 0 点的时间戳（北京时间固定 UTC+8，不依赖服务器时区） */
+function beijingDayStart(now = Date.now()): number {
+  const off = 8 * 3600_000;
+  return Math.floor((now + off) / 86_400_000) * 86_400_000 - off;
+}
+
+/** 给新用户发注册赠送；当天名额已满则不发，返回 false */
+export function grantSignupBonus(userId: string): boolean {
+  const d = db();
+  return d.transaction(() => {
+    const { n } = d
+      .prepare("SELECT COUNT(*) AS n FROM ledger WHERE ref LIKE 'signup:%' AND created_at >= ?")
+      .get(beijingDayStart()) as { n: number };
+    if (n >= SIGNUP_DAILY_LIMIT) return false;
+    return addCredits(userId, SIGNUP_BONUS, "注册赠送", `signup:${userId}`);
+  })();
 }

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { db } from "./db";
-import { addCredits, SIGNUP_BONUS } from "./credits";
+import { grantSignupBonus } from "./credits";
 import { mailConfigured, sendMail } from "./mail";
 
 /** 邮箱验证码登录 + 基于 cookie 的会话 */
@@ -57,7 +57,7 @@ export async function requestCode(email: string): Promise<{ ok: true; devCode?: 
   }
 }
 
-/** 校验验证码；成功则返回会话 token（新邮箱会自动注册并赠送 credit） */
+/** 校验验证码；成功则返回会话 token（新邮箱会自动注册；每天前若干名新用户有赠送 credit） */
 export function verifyCode(email: string, code: string): { token: string } | { error: string } {
   const d = db();
   const row = d.prepare("SELECT code_hash, expires_at, attempts FROM login_codes WHERE email = ?").get(email) as
@@ -75,7 +75,7 @@ export function verifyCode(email: string, code: string): { token: string } | { e
   if (!user) {
     user = { id: randomBytes(12).toString("hex") };
     d.prepare("INSERT INTO users (id, email, credits, created_at) VALUES (?, ?, 0, ?)").run(user.id, email, Date.now());
-    addCredits(user.id, SIGNUP_BONUS, "注册赠送", `signup:${user.id}`);
+    grantSignupBonus(user.id);
   }
   const token = randomBytes(32).toString("hex");
   d.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
