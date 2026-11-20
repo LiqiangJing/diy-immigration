@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Chat from "@/components/Chat";
 import Cases from "@/components/Cases";
 import Profile from "@/components/Profile";
+import Docs from "@/components/Docs";
 import { emptyProfile, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
-import type { Conversation, ImmigrationCase } from "@/lib/types";
+import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
 const CONV_KEY = "pathway.conversations";
 const CASE_KEY = "pathway.cases";
 const PROFILE_KEY = "pathway.profile";
+const DOCS_KEY = "pathway.docs";
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -27,7 +29,7 @@ function save(key: string, value: unknown) {
   } catch {}
 }
 
-type View = "chat" | "cases" | "profile";
+type View = "chat" | "docs" | "cases" | "profile";
 
 export default function Home() {
   const [view, setView] = useState<View>("chat");
@@ -35,6 +37,7 @@ export default function Home() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [cases, setCases] = useState<ImmigrationCase[]>([]);
   const [profile, setProfile] = useState<ProfileData>(emptyProfile);
+  const [docs, setDocs] = useState<DocFile[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // 只有用户主动切换会话时才重新挂载 Chat；发送首条消息创建会话时不能重挂载，否则会打断流式输出
@@ -50,6 +53,7 @@ export default function Home() {
   useEffect(() => {
     setConvs(load<Conversation[]>(CONV_KEY, []));
     setCases(load<ImmigrationCase[]>(CASE_KEY, []));
+    setDocs(load<DocFile[]>(DOCS_KEY, []));
     setProfile({ ...emptyProfile(), ...load<Partial<ProfileData>>(PROFILE_KEY, {}) });
     setLoaded(true);
   }, []);
@@ -62,6 +66,9 @@ export default function Home() {
   useEffect(() => {
     if (loaded) save(PROFILE_KEY, profile);
   }, [profile, loaded]);
+  useEffect(() => {
+    if (loaded) save(DOCS_KEY, docs);
+  }, [docs, loaded]);
 
   const patchConv = useCallback(
     (id: string, fn: (c: Conversation) => Conversation) =>
@@ -93,15 +100,19 @@ export default function Home() {
 
         <nav className="nav">
           <button className={view === "chat" ? "on" : ""} onClick={() => go("chat")}>
-            <strong>Chat</strong>
+            <strong>聊天</strong>
             <span>移民问题，随时问</span>
           </button>
+          <button className={view === "docs" ? "on" : ""} onClick={() => go("docs")}>
+            <strong>文档</strong>
+            <span>边聊边写 Petition Letter、推荐信</span>
+          </button>
           <button className={view === "cases" ? "on" : ""} onClick={() => go("cases")}>
-            <strong>Case</strong>
+            <strong>案件</strong>
             <span>准备 NIW、EB-1A 案件材料</span>
           </button>
           <button className={view === "profile" ? "on" : ""} onClick={() => go("profile")}>
-            <strong>My Profile</strong>
+            <strong>我的档案</strong>
             <span>学历、成果与未来计划</span>
           </button>
         </nav>
@@ -157,7 +168,14 @@ export default function Home() {
             patchConv={patchConv}
             fileData={fileData.current}
             profileText={profileToText(profile)}
-            firstName={profile.firstName.trim()}
+            firstName={(profile.chineseName || profile.firstName).trim()}
+          />
+        ) : view === "docs" ? (
+          <Docs
+            docs={docs}
+            setDocs={setDocs}
+            fileData={fileData.current}
+            profileText={profileToText(profile)}
           />
         ) : view === "cases" ? (
           <Cases cases={cases} setCases={setCases} />

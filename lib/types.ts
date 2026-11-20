@@ -19,6 +19,16 @@ export type Conversation = {
   messages: ChatMessage[];
 };
 
+export type DocFile = {
+  id: string;
+  title: string;
+  kind: string;
+  content: string; // Markdown
+  updatedAt: number;
+  chat: ChatMessage[];
+  undo?: string; // AI 上一次修改之前的内容
+};
+
 export type CaseType = "NIW" | "EB-1A";
 
 export type ImmigrationCase = {

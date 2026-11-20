@@ -59,7 +59,7 @@ function DegreeFields({
         <label>
           学位类型
           {enrolled ? (
-            <input value={d.type} onChange={(e) => set({ type: e.target.value })} placeholder="如 PhD (in progress)" />
+            <input value={d.type} onChange={(e) => set({ type: e.target.value })} placeholder="如 博士在读（PhD in progress）" />
           ) : (
             <select value={d.type} onChange={(e) => set({ type: e.target.value })}>
               <option value="">请选择</option>
@@ -115,7 +115,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
     <div className="cases profile">
       <div className="case-head">
         <div>
-          <h2>My Profile</h2>
+          <h2>我的档案</h2>
           <p>
             填写你的背景。AI 在聊天和评估案件时会参考这份档案，不用每次重新介绍自己。
             {p.updatedAt > 0 && <> 上次更新：{new Date(p.updatedAt).toLocaleString("zh-CN")}（自动保存）</>}
@@ -127,14 +127,19 @@ export default function Profile({ profile: p, setProfile }: Props) {
         <h3>基本信息</h3>
         <div className="grid2">
           <label>
-            First Name（名）
-            <input value={p.firstName} onChange={(e) => set({ firstName: e.target.value })} />
+            名（英文 / 拼音）
+            <input value={p.firstName} onChange={(e) => set({ firstName: e.target.value })} placeholder="与护照一致，如 Xiaoming" />
           </label>
           <label>
-            Last Name（姓）
-            <input value={p.lastName} onChange={(e) => set({ lastName: e.target.value })} />
+            姓（英文 / 拼音）
+            <input value={p.lastName} onChange={(e) => set({ lastName: e.target.value })} placeholder="与护照一致，如 Wang" />
           </label>
         </div>
+        <label>
+          中文姓名（选填）
+          <small>申请文书和表格都用护照上的英文名；中文名只用于称呼你。</small>
+          <input value={p.chineseName} onChange={(e) => set({ chineseName: e.target.value })} />
+        </label>
         <label>
           研究 / 工作领域
           <input
@@ -164,7 +169,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
         {p.enrolled ? (
           <DegreeFields enrolled d={p.enrolled} onChange={(enrolled) => set({ enrolled })} onRemove={() => set({ enrolled: null })} />
         ) : (
-          <button className="btn-ghost" onClick={() => set({ enrolled: newDegree("PhD (in progress)") })}>
+          <button className="btn-ghost" onClick={() => set({ enrolled: newDegree("博士在读（PhD in progress）") })}>
             + 我目前在读高等学位
           </button>
         )}
@@ -173,13 +178,13 @@ export default function Profile({ profile: p, setProfile }: Props) {
       <section className="card">
         <h3>学术记录</h3>
         <label>
-          引用数据库链接（Google Scholar、ResearchGate 等）
+          学术主页链接（Google Scholar、Semantic Scholar、ResearchGate 等均可）
           <small>请确认主页是公开的，并且里面的文章都确实是你的。</small>
           <input
             type="url"
             value={p.scholarUrl}
             onChange={(e) => set({ scholarUrl: e.target.value })}
-            placeholder="https://scholar.google.com/citations?user=..."
+            placeholder="https://scholar.google.com/... 或 https://www.semanticscholar.org/author/..."
           />
         </label>
         <div className="grid2">
@@ -210,7 +215,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
         <h3>工作与未来计划</h3>
         <label>
           当前在美职位
-          <small>如 PhD student at UT Dallas, TX；Software Engineer at Amazon, WA。不在美国或待业填 N/A。</small>
+          <small>用英文填写，如 PhD student at University of California, CA；Software Engineer at Amazon, WA。不在美国或待业填 N/A。</small>
           <input value={p.currentPosition} onChange={(e) => set({ currentPosition: e.target.value })} />
         </label>
 

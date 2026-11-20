@@ -5,6 +5,16 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { uid } from "@/lib/types";
 import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/types";
+import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
+
+/** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
+export type DocContext = {
+  title: string;
+  kind: string;
+  getContent: () => string;
+  setContent: (content: string) => void;
+  beginTurn: () => void;
+};
 
 const SUGGESTIONS = [
   "NIW 和 EB-1A 我更适合哪个？",
@@ -43,9 +53,11 @@ type Props = {
   fileData: Map<string, string>;
   profileText: string;
   firstName: string;
+  docCtx?: DocContext;
+  intro?: { title: string; desc: string; suggestions: string[] };
 };
 
-export default function Chat({ conv, addConv, patchConv, fileData, profileText, firstName }: Props) {
+export default function Chat({ conv, addConv, patchConv, fileData, profileText, firstName, docCtx, intro }: Props) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -115,10 +127,10 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
       });
     }
     const id = convId;
-    const setBot = (fn: (prev: string) => string) =>
+    const setBot = (text: string) =>
       patchConv(id, (c) => ({
         ...c,
-        messages: c.messages.map((m) => (m.id === botMsg.id ? { ...m, text: fn(m.text) } : m)),
+        messages: c.messages.map((m) => (m.id === botMsg.id ? { ...m, text } : m)),
       }));
 
     setInput("");
@@ -140,11 +152,24 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
         })),
       }));
 
+    let raw = "";
+    let suffix = "";
+    // 文档模式下，回复里的文档标签不显示在聊天里
+    const visible = () =>
+      docCtx ? stripDocBlocks(raw) || (raw.includes("<doc_") ? "_正在修改文档…_" : "") : raw;
+    docCtx?.beginTurn();
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: payload, profile: profileText }),
+        body: JSON.stringify({
+          messages: payload,
+          profile: profileText,
+          doc: docCtx
+            ? { title: docCtx.title, kind: docCtx.kind, content: docCtx.getContent() }
+            : undefined,
+        }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -157,16 +182,36 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        if (chunk) setBot((prev) => prev + chunk);
+        if (!chunk) continue;
+        raw += chunk;
+        if (docCtx) {
+          const written = liveWrite(raw);
+          if (written !== null) docCtx.setContent(written);
+        }
+        setBot(visible());
       }
     } catch (e) {
-      if (ctrl.signal.aborted) {
-        setBot((prev) => prev + (prev ? "\n\n" : "") + "> 已停止生成。");
-      } else {
-        const msg = e instanceof Error ? e.message : "请求失败";
-        setBot((prev) => prev + (prev ? "\n\n" : "") + `> ⚠️ ${msg}`);
-      }
+      suffix = ctrl.signal.aborted
+        ? "\n\n> 已停止生成。"
+        : `\n\n> ⚠️ ${e instanceof Error ? e.message : "请求失败"}`;
     } finally {
+      let body = raw;
+      if (docCtx) {
+        const notes: string[] = [];
+        if (liveWrite(raw) !== null) notes.push("已写入文档");
+        const edits = parseEdits(raw);
+        if (edits.length) {
+          const r = applyEdits(docCtx.getContent(), edits);
+          if (r.applied) {
+            docCtx.setContent(r.content);
+            notes.push(`已修改文档 ${r.applied} 处`);
+          }
+          if (r.failed) notes.push(`有 ${r.failed} 处修改没能在文档里定位到原文，已跳过`);
+        }
+        body = stripDocBlocks(raw);
+        if (notes.length) body += `\n\n> ✏️ ${notes.join("；")}（可在文档上方撤销）`;
+      }
+      setBot((body + suffix).trim());
       setBusy(false);
       abort.current = null;
     }
@@ -210,7 +255,11 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
       <textarea
         value={input}
         rows={2}
-        placeholder="关于 NIW / EB-1A 的一切，尽管问。可以拖入或上传简历、推荐信等材料"
+        placeholder={
+          docCtx
+            ? "告诉 AI 怎么写、怎么改，比如「把第二段改得更具体」"
+            : "关于 NIW / EB-1A 的一切，尽管问。可以拖入或上传简历、推荐信等材料"
+        }
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -264,12 +313,12 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
 
   if (empty) {
     return (
-      <div className="chat chat-empty">
+      <div className={`chat chat-empty ${docCtx ? "compact" : ""}`}>
         <div className="hero">
-          <h1>你好{firstName ? ` ${firstName}` : ""}，我是 DIY Immigration</h1>
-          <p>帮你自己准备 NIW 和 EB-1A 申请：评估背景、分析材料、修改文书</p>
+          <h1>{intro?.title ?? `你好${firstName ? ` ${firstName}` : ""}，我是 DIY Immigration`}</h1>
+          <p>{intro?.desc ?? "帮你自己准备 NIW 和 EB-1A 申请：评估背景、分析材料、修改文书"}</p>
           <div className="suggestions">
-            {SUGGESTIONS.map((s) => (
+            {(intro?.suggestions ?? SUGGESTIONS).map((s) => (
               <button key={s} onClick={() => send(s)}>
                 {s}
               </button>
@@ -285,7 +334,7 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
   }
 
   return (
-    <div className="chat">
+    <div className={`chat ${docCtx ? "compact" : ""}`}>
       <div className="messages">
         <div className="messages-inner">
           {messages.map((m, i) => (

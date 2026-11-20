@@ -16,6 +16,21 @@ const SYSTEM = `你是一个帮助用户自己准备（DIY）美国职业移民�
 - 你不是律师，提供的是一般性信息而非法律意见；案情复杂（如有拒签史、身份问题）时建议咨询持牌移民律师。不必每条回复都重复这句话。
 - 用用户使用的语言回复，默认中文；法律术语可保留英文原文。`;
 
+const docSystem = (title: string, kind: string) => `
+
+用户现在在「文档工作区」里写文档，类型是「${kind}」，标题是「${title}」。用户的每条最新消息后面都附有文档当前的完整内容（<current_document>）。你可以直接修改这份文档，方法是在回复里输出下面的标签：
+
+- 写入或整体重写：<doc_write>完整的新文档内容</doc_write>
+- 局部修改：<doc_edit><find>要被替换的原文</find><replace>替换后的文字</replace></doc_edit>，可以连续输出多个
+
+规则：
+- 文档为空或需要大幅重写时用 doc_write；其余情况用 doc_edit，不要为了小改动重写全文。
+- find 必须和文档里的文字逐字一致（包括标点和换行），并且在文档里只出现一次；取能唯一定位的最短片段。
+- 文档内容用 Markdown。英文文书（Petition Letter、推荐信等）用英文写，除非用户另有要求。
+- 标签以外的文字是给用户看的聊天回复：简短说明你改了什么、为什么，不要把文档内容再贴一遍。
+- 用户只是提问或讨论时，不要修改文档。
+- 不要编造用户没有提供的事实（论文、引用数、奖项、推荐人身份、数据等）。缺信息时在文档里写 [待补充：需要什么]，并在聊天里向用户要。`;
+
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
@@ -48,7 +63,11 @@ function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
 }
 
 export async function POST(req: Request) {
-  let body: { messages?: ApiMessage[]; profile?: string };
+  let body: {
+    messages?: ApiMessage[];
+    profile?: string;
+    doc?: { title?: string; kind?: string; content?: string };
+  };
   try {
     body = await req.json();
   } catch {
@@ -63,9 +82,22 @@ export async function POST(req: Request) {
   }
 
   const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 4000) : "";
-  const system = profile
-    ? `${SYSTEM}\n\n以下是用户在「My Profile」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`
+  const doc = body.doc && typeof body.doc.content === "string" ? body.doc : null;
+  if (doc) {
+    const last = messages[messages.length - 1].content as Anthropic.Beta.BetaContentBlockParam[];
+    last.push({
+      type: "text",
+      text: doc.content!.trim()
+        ? `<current_document>\n${doc.content}\n</current_document>`
+        : "<current_document>（文档目前是空的）</current_document>",
+    });
+  }
+  const base = doc
+    ? SYSTEM + docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100))
     : SYSTEM;
+  const system = profile
+    ? `${base}\n\n以下是用户在「我的档案」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`
+    : base;
 
   const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
 

@@ -12,6 +12,7 @@ export type Degree = {
 export type Profile = {
   firstName: string;
   lastName: string;
+  chineseName: string;
   field: string;
   degrees: Degree[];
   enrolled: Degree | null; // 在读的高等学位
@@ -28,12 +29,13 @@ export type Profile = {
   updatedAt: number;
 };
 
-export const DEGREE_TYPES = ["Bachelor", "Master", "PhD", "MD", "JD", "其他"];
+export const DEGREE_TYPES = ["学士（Bachelor）", "硕士（Master）", "博士（PhD）", "MD", "JD", "其他"];
 export const REVIEW_OPTIONS = ["0", "1–5", "6–10", ">10"];
 
 export const emptyProfile = (): Profile => ({
   firstName: "",
   lastName: "",
+  chineseName: "",
   field: "",
   degrees: [],
   enrolled: null,
@@ -69,12 +71,13 @@ export function profileToText(p: Profile): string {
       .filter(Boolean)
       .join("，");
 
-  add("姓名", `${p.firstName} ${p.lastName}`);
+  add("英文姓名", `${p.firstName} ${p.lastName}`);
+  add("中文姓名", p.chineseName);
   add("研究 / 工作领域", p.field);
   p.degrees.forEach((d) => add("已获学位", deg(d, "授予年份")));
   if (p.enrolled) add("在读学位", deg(p.enrolled, "预计毕业"));
   add("当前在美职位", p.currentPosition);
-  add("学术主页", p.scholarUrl);
+  add("学术主页链接", p.scholarUrl);
   add("论文数", p.papers);
   add("总引用数", p.citations);
   add("审稿次数", p.reviews);
