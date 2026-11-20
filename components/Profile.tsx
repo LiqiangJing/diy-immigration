@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAccount } from "@/lib/account";
 import Notable from "@/components/Notable";
+import Soc from "@/components/Soc";
 import { DEGREE_TYPES, REVIEW_OPTIONS, primaryPatch, primaryRecord } from "@/lib/profile";
 import type { Degree, Profile as ProfileData, Related, ScholarRecord } from "@/lib/profile";
 import { uid } from "@/lib/types";
@@ -232,6 +233,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
 
   const set = (patch: Partial<ProfileData>) =>
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
+  const [tab, setTab] = useState<"basic" | "scholar" | "soc">("basic");
 
   return (
     <div className="cases profile">
@@ -245,6 +247,23 @@ export default function Profile({ profile: p, setProfile }: Props) {
         </div>
       </div>
 
+      <div className="tabs" role="tablist">
+        {(
+          [
+            ["basic", "基本资料"],
+            ["scholar", "学术记录与引用"],
+            ["soc", "贡献总结"],
+          ] as const
+        ).map(([t, label]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "soc" && <Soc profile={p} setProfile={setProfile} />}
+
+      {tab === "basic" && (<>
       <section className="card">
         <h3>基本信息</h3>
         <div className="grid2">
@@ -297,6 +316,9 @@ export default function Profile({ profile: p, setProfile }: Props) {
         )}
       </section>
 
+      </>)}
+
+      {tab === "scholar" && (<>
       <section className="card">
         <h3>学术记录</h3>
         <small>
@@ -458,6 +480,9 @@ export default function Profile({ profile: p, setProfile }: Props) {
       </section>
 
       <Notable profile={p} setProfile={setProfile} />
+      </>)}
+
+      {tab === "basic" && (
 
       <section className="card">
         <h3>工作与未来计划</h3>
@@ -517,6 +542,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
           )}
         </div>
       </section>
+      )}
 
       <p className="disclaimer">档案只保存在你当前的浏览器里；聊天时会随消息发送给 AI。</p>
     </div>

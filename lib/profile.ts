@@ -64,6 +64,41 @@ export type CitationAnalysis = {
   items: NotableCitation[];
 };
 
+/** 贡献总结（Summary of Contributions）：NIW 和 EB-1A 共用的事实底稿 */
+export type SocProject = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  outputs: string;
+  funding: string;
+  summary: string;
+  impact: string;
+};
+export type SocReview = { id: string; venue: string; count: string; invited: "" | "yes" | "no" | "other" };
+export type Soc = {
+  subareas: string;
+  importance: string;
+  projects: SocProject[];
+  awards: string;
+  reviews: SocReview[];
+  openSource: string;
+  media: string;
+  other: string;
+};
+export const emptySoc = (): Soc => ({
+  subareas: "",
+  importance: "",
+  projects: [],
+  awards: "",
+  reviews: [],
+  openSource: "",
+  media: "",
+  other: "",
+});
+export const socFilled = (s: Soc | undefined) =>
+  Boolean(s && (s.importance.trim() || s.projects.some((x) => x.title.trim() || x.summary.trim())));
+
 export const isSelected = (c: NotableCitation) => c.selected ?? c.importance === "high";
 
 export type Profile = {
@@ -82,6 +117,7 @@ export type Profile = {
   records: ScholarRecord[]; // 各来源获取到的记录
   primarySource: string; // 主要数字取自哪个来源；手填或没有记录时为空
   analyses: CitationAnalysis[]; // 各篇论文的重要引用分析
+  soc: Soc; // 贡献总结
   reviews: string;
   currentPosition: string;
   sameField: "" | "yes" | "no";
@@ -110,6 +146,7 @@ export const emptyProfile = (): Profile => ({
   records: [],
   primarySource: "",
   analyses: [],
+  soc: emptySoc(),
   reviews: "",
   currentPosition: "",
   sameField: "",
@@ -125,6 +162,9 @@ export function normalizeProfile(raw: Record<string, any>): Profile {
   const p = { ...emptyProfile(), ...raw } as Profile & Record<string, any>;
   if (!Array.isArray(p.records)) p.records = [];
   if (!Array.isArray(p.analyses)) p.analyses = [];
+  p.soc = { ...emptySoc(), ...(raw.soc ?? {}) };
+  if (!Array.isArray(p.soc.projects)) p.soc.projects = [];
+  if (!Array.isArray(p.soc.reviews)) p.soc.reviews = [];
   if (!p.records.length && Array.isArray(raw.publications) && raw.publications.length) {
     const source = raw.scholarSource?.source ?? "OpenAlex";
     p.records = [
@@ -215,6 +255,21 @@ export function profileToText(p: Profile): string {
     );
   }
   add("审稿次数", p.reviews);
+  // 贡献总结只放概要，全文在案件的「Summary of Contributions」文档里，免得每次对话都带上一大段
+  const soc = p.soc;
+  if (socFilled(soc)) {
+    const cut = (s: string, n: number) => (s.trim().length > n ? `${s.trim().slice(0, n)}…` : s.trim());
+    lines.push("贡献总结（概要；完整内容在案件的「Summary of Contributions」文档里，写申请信和推荐信时请让用户引用那份文档）：");
+    if (soc.subareas.trim()) lines.push(`  细分方向：${soc.subareas.trim().split("\n").filter(Boolean).join("；")}`);
+    soc.projects
+      .filter((x) => x.title.trim())
+      .forEach((x, i) => lines.push(`  项目 ${i + 1}：${x.title.trim()}${x.summary.trim() ? `。${cut(x.summary, 220)}` : ""}`));
+    const n = soc.reviews.reduce((t, r) => t + (Number(r.count) || 0), 0);
+    if (n) lines.push(`  审稿：共 ${n} 次，涉及 ${soc.reviews.filter((r) => r.venue.trim()).length} 个期刊或会议`);
+    if (soc.awards.trim()) lines.push(`  奖项：${cut(soc.awards.replace(/\n+/g, "；"), 300)}`);
+    if (soc.media.trim()) lines.push("  有媒体报道");
+    if (soc.openSource.trim()) lines.push("  有开源贡献");
+  }
   if (p.sameField === "yes") lines.push("未来工作：将继续在同一或相近领域工作");
   if (p.sameField === "no")
     lines.push(`未来工作：领域有变化，从「${p.fieldFrom || "未填"}」转到「${p.fieldTo || "未填"}」`);
@@ -305,5 +360,48 @@ export function notableReport(p: Profile): string {
       );
     });
   }
+  return out.join("\n");
+}
+
+/** 把贡献总结整理成一份文档，放进案件里供写申请信和推荐信时引用；没填时返回空串 */
+export function socReport(p: Profile): string {
+  const soc = p.soc;
+  if (!socFilled(soc)) return "";
+  const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
+  const out: string[] = [`# Summary of Contributions — ${name}`, ""];
+  const block = (title: string, body: string) => {
+    if (body.trim()) out.push(`**${title}**`, "", body.trim(), "");
+  };
+  out.push("## I. Background", "");
+  block("Main field", p.field);
+  block("Sub-areas / specializations", soc.subareas);
+  block("Importance, benefits, and applications", soc.importance);
+  if (soc.projects.length) out.push("## II. Top Contributions", "");
+  soc.projects.forEach((x, i) => {
+    out.push(`### Project ${i + 1}: ${x.title.trim() || "(untitled)"}`, "");
+    if (x.start.trim() || x.end.trim()) out.push(`**Dates:** ${x.start.trim() || "?"} – ${x.end.trim() || "?"}`, "");
+    block("Outputs", x.outputs);
+    block("Funding", x.funding);
+    block("Summary of the work", x.summary);
+    block("Significance and impact", x.impact);
+  });
+  out.push("## III. Notable Accomplishments", "");
+  block("Awards", soc.awards);
+  const reviews = soc.reviews.filter((r) => r.venue.trim());
+  if (reviews.length) {
+    const total = reviews.reduce((t, r) => t + (Number(r.count) || 0), 0);
+    const inv = { yes: "Yes", no: "No", other: "Other", "": "" } as const;
+    out.push(
+      `**Peer review (${total} reviews in total)**`,
+      "",
+      "| Journal / conference | Reviews | Formal invitation |",
+      "| --- | --- | --- |",
+      ...reviews.map((r) => `| ${r.venue.trim()} | ${r.count.trim()} | ${inv[r.invited]} |`),
+      "",
+    );
+  }
+  block("Open-source contributions", soc.openSource);
+  block("Media coverage", soc.media);
+  block("Other accomplishments", soc.other);
   return out.join("\n");
 }

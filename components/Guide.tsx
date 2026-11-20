@@ -3,7 +3,7 @@
 import { isPaperFile } from "@/components/PaperFetch";
 import { claimsReady, EB1A_CRITERIA, EXCEPTIONAL_CRITERIA, MIN_CLAIMS } from "@/lib/claims";
 import type { Claim } from "@/lib/claims";
-import { isSelected } from "@/lib/profile";
+import { isSelected, socFilled } from "@/lib/profile";
 import type { Profile } from "@/lib/profile";
 import { workflowById } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
@@ -131,6 +131,18 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       done: p.records.length > 0,
       have: p.records.map((r) => r.source).join("、"),
       actions: [toProfile],
+    },
+    {
+      id: "soc",
+      title: "写贡献总结",
+      desc: "在「我的档案」的「贡献总结」里列出你的主要项目、成果和影响，以及奖项、审稿、媒体报道等。写要点就行。填好后在这里生成「Summary of Contributions」文档，申请信和推荐信都以它为底稿。",
+      done: byKind("Summary of Contributions").length > 0,
+      have: socFilled(p.soc) && !byKind("Summary of Contributions").length ? "档案里已经填了，还没有生成文档" : "",
+      actions: byKind("Summary of Contributions").length
+        ? openDocs(byKind("Summary of Contributions"))
+        : socFilled(p.soc)
+          ? [{ label: "生成「Summary of Contributions」文档", run: () => onCreate("Summary of Contributions") }, toProfile]
+          : [toProfile],
     },
     {
       id: "materials",

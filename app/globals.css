@@ -297,6 +297,12 @@ button:disabled { cursor: not-allowed; }
 .paper-fetch-list > small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
 .link.replace { cursor: pointer; white-space: nowrap; }
 .tag.preprint { margin-left: 8px; background: #fff4d6; color: #8a6100; font-weight: 500; }
+.profile textarea { font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; resize: vertical; width: 100%; background: var(--bg); line-height: 1.5; }
+.profile select { font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+.soc-project { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.soc-project-head { display: flex; justify-content: space-between; align-items: center; }
+.soc-review { display: grid; grid-template-columns: 1fr 80px 170px auto; gap: 8px; align-items: center; }
+@media (max-width: 700px) { .soc-review { grid-template-columns: 1fr 70px; } }
 .candidates { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .candidates button { text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--bg); display: flex; flex-direction: column; }
 .candidates button:hover { border-color: var(--accent); }

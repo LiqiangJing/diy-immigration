@@ -13,7 +13,7 @@ export const DOC_KINDS = [
   { kind: "Petition Letter", desc: "申请信，整个案件的核心论证" },
   { kind: "推荐信", desc: "Recommendation Letter 草稿" },
   { kind: "Proposed Endeavor 陈述", desc: "NIW 拟从事事业的说明" },
-  { kind: "Summary of Contributions", desc: "个人贡献总结" },
+  { kind: "Summary of Contributions", desc: "用「我的档案」里的贡献总结自动生成，写申请信和推荐信时引用它" },
   { kind: "论文与引用记录", desc: "用「我的档案」里获取的学术数据自动生成" },
   { kind: "重要引用", desc: "用「我的档案」里的重要引用分析自动生成，写 Petition Letter 时引用它" },
   { kind: "其他文档", desc: "RFE 回复、个人陈述等" },
