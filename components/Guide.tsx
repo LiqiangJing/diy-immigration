@@ -1,5 +1,6 @@
 "use client";
 
+import { isPaperFile } from "@/components/PaperFetch";
 import { claimsReady, EB1A_CRITERIA, EXCEPTIONAL_CRITERIA, MIN_CLAIMS } from "@/lib/claims";
 import type { Claim } from "@/lib/claims";
 import { isSelected } from "@/lib/profile";
@@ -203,6 +204,15 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       desc: "整个申请的核心论证。AI 会引用案件里的全部材料来写，缺证据的地方会标出来。",
       done: pl.length > 0,
       actions: pl.length ? openDocs(pl) : [start(c.type === "NIW" ? "niw-petition-narrative" : "eb1a-petition-narrative")],
+    },
+    {
+      id: "papers",
+      title: "下载论文 PDF",
+      desc: "把你的代表作和重要引用的论文一键下载到案件里，作为 Exhibit。文书里用到的论文会自动勾上。",
+      optional: true,
+      done: files.some(isPaperFile),
+      have: files.some(isPaperFile) ? `已下载 ${files.filter(isPaperFile).length} 篇` : "",
+      actions: [{ label: "去下载论文", run: () => goTab("files") }],
     },
     {
       id: "forms",

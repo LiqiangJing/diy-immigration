@@ -5,6 +5,7 @@ import { DocList, DocWorkspace } from "@/components/Docs";
 import type { Library } from "@/components/Chat";
 import Guide from "@/components/Guide";
 import Packer from "@/components/Packer";
+import PaperFetch from "@/components/PaperFetch";
 import type { Profile } from "@/lib/profile";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
 import { claimsLine } from "@/lib/claims";
@@ -251,6 +252,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pro
               />
             </div>
             {notice && <div className="notice">{notice}</div>}
+            <PaperFetch c={open} docs={caseDocs} profile={profile} patchCase={(fn) => patchCase(open.id, fn)} />
             {files.length === 0 ? (
               <p className="group-note">还没有文件。</p>
             ) : (
