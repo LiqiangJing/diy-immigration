@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { DocList, DocWorkspace } from "@/components/Docs";
 import type { Library } from "@/components/Chat";
+import Guide from "@/components/Guide";
 import Packer from "@/components/Packer";
+import type { Profile } from "@/lib/profile";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
 import { workflowsFor } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
@@ -17,12 +19,14 @@ type Props = {
   docs: DocFile[];
   setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
   profileText: string;
+  profile: Profile;
+  goProfile: () => void;
   petitioner: string;
   citationReport: string; // 由「我的档案」的学术数据生成，可能为空
   notableReport: string; // 由「我的档案」的重要引用分析生成，可能为空
 };
 
-type Tab = "docs" | "files" | "checklist" | "pack";
+type Tab = "guide" | "docs" | "files" | "checklist" | "pack";
 
 export const caseLine = (c: ImmigrationCase) => `当前案件：${c.name}（${c.type}）`;
 
@@ -36,12 +40,12 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-export default function Cases({ cases, setCases, docs, setDocs, profileText, petitioner, citationReport, notableReport }: Props) {
+export default function Cases({ cases, setCases, docs, setDocs, profileText, profile, goProfile, petitioner, citationReport, notableReport }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
   const [draft, setDraft] = useState<DocFile | null>(null);
-  const [tab, setTab] = useState<Tab>("docs");
+  const [tab, setTab] = useState<Tab>("guide");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<CaseType>("NIW");
@@ -82,7 +86,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
     setCases((list) => [c, ...list]);
     setCreating(false);
     setName("");
-    setTab("docs");
+    setTab("guide");
     setOpenId(c.id);
   }
 
@@ -168,6 +172,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
         <div className="tabs" role="tablist">
           {(
             [
+              ["guide", "申请向导"],
               ["docs", `文档 ${caseDocs.length}`],
               ["files", `文件 ${files.length}`],
               ["checklist", `材料清单 ${pct}%`],
@@ -179,6 +184,20 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
             </button>
           ))}
         </div>
+
+        {tab === "guide" && (
+          <Guide
+            c={open}
+            docs={caseDocs}
+            profile={profile}
+            patchCase={(fn) => patchCase(open.id, fn)}
+            onWorkflow={(w) => createDoc(w.title, w)}
+            onCreate={createDoc}
+            onOpenDoc={setOpenDocId}
+            goTab={setTab}
+            goProfile={goProfile}
+          />
+        )}
 
         {tab === "docs" && (
           <>
@@ -362,7 +381,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
                 key={c.id}
                 className="case-card"
                 onClick={() => {
-                  setTab("docs");
+                  setTab("guide");
                   setNotice("");
                   setOpenId(c.id);
                 }}

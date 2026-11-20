@@ -11,6 +11,8 @@ export type Workflow = {
   starter: string;
   /** 开始前给用户的提示 */
   hint: string;
+  /** 自己写的 skill（在 skills/diy/ 下），不是开源的那一套 */
+  own?: boolean;
 };
 
 export const WORKFLOWS: Workflow[] = [
@@ -57,6 +59,22 @@ export const WORKFLOWS: Workflow[] = [
     desc: "拆解补件通知，逐条对应证据并起草回复",
     starter: "我收到了 RFE。请先拆解里面提出的每一项不足，告诉我每项需要什么证据来回应。",
     hint: "请先把 RFE 通知上传到「文件」页，或直接在这里上传。",
+  },
+  {
+    id: "form-guide",
+    title: "表格填写指引",
+    desc: "列出要交哪些表格，逐栏告诉你怎么填",
+    starter: "请根据我的档案和案件材料，列出我需要提交哪些表格，并逐栏告诉我怎么填；缺的信息一次性列出来问我。",
+    hint: "已自动引用案件里的全部文件。表格请到 USCIS 官网下载最新版，照着这份指引填，填好后上传到「文件」。",
+    own: true,
+  },
+  {
+    id: "cover-letter",
+    title: "Cover Letter 和 Exhibit 清单",
+    desc: "放在材料包最前面的递交信和材料目录",
+    starter: "请根据这个案件里已有的文档和文件，起草提交用的 Cover Letter，并列出 Exhibit 清单。",
+    hint: "已自动引用案件里的全部文件。建议在 Petition Letter 和证据都齐了之后再做这一步。",
+    own: true,
   },
 ];
 

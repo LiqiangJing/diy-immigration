@@ -50,6 +50,7 @@ export type ImmigrationCase = {
   done: string[]; // 已完成的材料项 id
   files?: Attachment[]; // 案件文件（内容存在 IndexedDB）
   pack?: PackConfig;
+  guide?: Record<string, "done" | "skip">; // 申请向导里用户手动标记的步骤
 };
 
 /** 发给 /api/chat 的消息结构 */

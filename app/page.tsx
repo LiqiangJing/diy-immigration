@@ -248,6 +248,8 @@ export default function Home() {
             docs={docs}
             setDocs={setDocs}
             profileText={profileToText(profile)}
+            profile={profile}
+            goProfile={() => go("profile")}
             petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
             citationReport={citationReport(profile)}
             notableReport={notableReport(profile)}

@@ -25,6 +25,8 @@ const AUTO_CITE = new Set([
   "niw-petition-narrative",
   "eb1a-petition-narrative",
   "petition-audit",
+  "form-guide",
+  "cover-letter",
 ]);
 
 const SUGGESTIONS = [

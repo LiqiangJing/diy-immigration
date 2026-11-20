@@ -30,12 +30,19 @@ const ADAPTER = `
 const cache = new Map<string, string>();
 
 export function skillPrompt(id: string | undefined, caseType: string | undefined): string {
-  if (!workflowById(id)) return "";
+  const wf = workflowById(id);
+  if (!wf) return "";
   const kind = caseType === "EB-1A" ? "EB-1A" : "NIW";
   const key = `${id}:${kind}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   try {
+    if (wf.own) {
+      const own = readFileSync(join(process.cwd(), "skills", "diy", `${id}.md`), "utf8");
+      const text = `\n\n下面规定了你在这个工作流里应该怎么做。成果按文档工作区的规则写进文档，不要贴在聊天里。这个案件的类别是 ${kind}。\n\n<skill name="${id}">\n${own}\n</skill>`;
+      cache.set(key, text);
+      return text;
+    }
     const skill = readFileSync(join(ROOT, id!, "skill.md"), "utf8");
     const knowledge = [...COMMON, ...(kind === "EB-1A" ? EB1A : NIW)]
       .map((f) => `<knowledge file="knowledge/${f}">\n${readFileSync(join(ROOT, "knowledge", f), "utf8")}\n</knowledge>`)
