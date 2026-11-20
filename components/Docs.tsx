@@ -33,19 +33,6 @@ export function DocList({
 }) {
   return (
     <>
-      {onCreate && (
-        <>
-          <h3 className="section-title">新建文档</h3>
-          <div className="case-list">
-            {DOC_KINDS.map((k) => (
-              <button key={k.kind} className="case-card" onClick={() => onCreate(k.kind)}>
-                <strong>+ {k.kind}</strong>
-                <span className="case-meta">{k.desc}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
       {docs.length > 0 && (
         <>
           {onCreate && <h3 className="section-title">已有文档</h3>}
@@ -61,6 +48,19 @@ export function DocList({
                   </span>
                 </button>
               ))}
+          </div>
+        </>
+      )}
+      {onCreate && (
+        <>
+          <h3 className="section-title">新建文档</h3>
+          <div className="case-list">
+            {DOC_KINDS.map((k) => (
+              <button key={k.kind} className="case-card" onClick={() => onCreate(k.kind)}>
+                <strong>+ {k.kind}</strong>
+                <span className="case-meta">{k.desc}</span>
+              </button>
+            ))}
           </div>
         </>
       )}
@@ -206,7 +206,7 @@ export function DocWorkspace({
             <textarea
               className="doc-editor"
               value={doc.content}
-              placeholder={"在这里直接写，或者在右边让 AI 起草。\n\n支持 Markdown：# 标题、**加粗**、- 列表"}
+              placeholder={"在这里直接写，或者在右边让 AI 起草。写了内容之后文档才会保存。\n\n支持 Markdown：# 标题、**加粗**、- 列表"}
               onChange={(e) => patch((d) => ({ ...d, content: e.target.value, updatedAt: Date.now() }))}
             />
           ) : doc.content.trim() ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DocList, DocWorkspace } from "@/components/Docs";
 import type { Library } from "@/components/Chat";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
@@ -33,6 +33,8 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
 export default function Cases({ cases, setCases, docs, setDocs, profileText }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
+  // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
+  const [draft, setDraft] = useState<DocFile | null>(null);
   const [tab, setTab] = useState<Tab>("docs");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -42,7 +44,21 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText }: P
   const fileInput = useRef<HTMLInputElement>(null);
 
   const open = cases.find((c) => c.id === openId) ?? null;
-  const openDoc = docs.find((d) => d.id === openDocId) ?? null;
+  const openDoc = draft ?? docs.find((d) => d.id === openDocId) ?? null;
+
+  useEffect(() => {
+    if (draft && (draft.content.trim() || draft.chat.length > 0)) {
+      setDocs((list) => (list.some((d) => d.id === draft.id) ? list : [draft, ...list]));
+      setOpenDocId(draft.id);
+      setDraft(null);
+    }
+  }, [draft, setDocs]);
+
+  // 按 id 更新，不管这份文档此刻是草稿还是已保存（AI 流式写入期间可能正好发生切换）
+  const patchDoc = (id: string, fn: (d: DocFile) => DocFile) => {
+    setDraft((d) => (d && d.id === id ? fn(d) : d));
+    setDocs((list) => list.map((d) => (d.id === id ? fn(d) : d)));
+  };
   const orphanDocs = docs.filter((d) => !d.caseId || !cases.some((c) => c.id === d.caseId));
 
   const patchCase = (id: string, fn: (c: ImmigrationCase) => ImmigrationCase) =>
@@ -74,8 +90,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText }: P
       chat: [],
       caseId: open?.id,
     };
-    setDocs((list) => [d, ...list]);
-    setOpenDocId(d.id);
+    setDraft(d);
   }
 
   async function upload(caseId: string, files: FileList | File[]) {
@@ -90,10 +105,14 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText }: P
     return (
       <DocWorkspace
         doc={openDoc}
-        patch={(fn) => setDocs((list) => list.map((d) => (d.id === openDoc.id ? fn(d) : d)))}
-        onBack={() => setOpenDocId(null)}
+        patch={(fn) => patchDoc(openDoc.id, fn)}
+        onBack={() => {
+          setDraft(null);
+          setOpenDocId(null);
+        }}
         onDelete={() => {
           setDocs((list) => list.filter((d) => d.id !== openDoc.id));
+          setDraft(null);
           setOpenDocId(null);
         }}
         backLabel={owner ? owner.name : "全部案件"}
