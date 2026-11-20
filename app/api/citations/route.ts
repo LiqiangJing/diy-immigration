@@ -1,12 +1,12 @@
 /**
  * 重要引用分析。
  *   POST /api/citations {title} → 这篇论文被别人怎么引用的：每条引用的原文、分类和重要程度
- * 按模型的实际用量扣 credit（和聊天同一套算法）；没找到论文或没有可分析的引用时不扣。
+ * 按模型的实际用量扣 credit（算法和聊天一样，但加价倍数单独设得低一些）；没找到论文或没有可分析的引用时不扣。
  */
 
 import { getUser } from "@/lib/server/auth";
 import { analyzeCitations } from "@/lib/server/citations";
-import { addCredits, chatCost, NOTABLE_MIN_BALANCE } from "@/lib/server/credits";
+import { addCredits, chatCost, NOTABLE_MARKUP, NOTABLE_MIN_BALANCE } from "@/lib/server/credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     const { analysis, usage, price } = await analyzeCitations(title, req.signal);
     let cost = 0;
     if (price) {
-      cost = chatCost(usage, price);
+      cost = chatCost(usage, price, NOTABLE_MARKUP);
       addCredits(user.id, -cost, "重要引用分析");
     }
     return Response.json({ analysis, cost });

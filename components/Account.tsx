@@ -65,7 +65,7 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
         <strong>{me.user.credits}</strong>
         <small>
           按每次实际用量扣：普通问答每次几十个，一次案件评估约 200，起草或修改一封信每次约 200–300，带大文件会更多。
-          做完一个案件一般需要 5000–10000。一键获取学术数据每次 {me.scholarCost} 个；重要引用分析每篇论文约 100–400。
+          做完一个案件一般需要 5000–10000。一键获取学术数据每次 {me.scholarCost} 个；重要引用分析每篇论文约 50–250。
         </small>
       </section>
 

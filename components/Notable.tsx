@@ -82,7 +82,7 @@ export default function Notable({ profile: p, setProfile }: Props) {
       <small>
         申请信里有分量的不是引用总数，而是别人具体怎么用了你的工作。这里逐篇查出引用你论文的文章里提到你的原句，
         区分高度评价、在你的工作上扩展、拿你做 baseline / benchmark、使用你的方法或数据，还是只是顺带提一下，并挑出值得写进申请信的。
-        数据来自 Semantic Scholar，自引（有共同作者的）会自动排除。按实际用量扣 credit，引用多的论文一次大约 200–400 个。
+        数据来自 Semantic Scholar，自引（有共同作者的）会自动排除。按实际用量扣 credit，引用多的论文一次大约 150–250 个，引用少的更少。
       </small>
 
       {papers.length === 0 && (

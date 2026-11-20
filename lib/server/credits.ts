@@ -11,6 +11,8 @@ export const SIGNUP_BONUS = 200; // 新用户赠送，大约够做一次案件�
 export const SIGNUP_DAILY_LIMIT = Number(process.env.SIGNUP_DAILY_LIMIT) || 100;
 export const SCHOLAR_COST = 20; // 一键获取学术数据
 export const NOTABLE_MIN_BALANCE = 100; // 做一次重要引用分析至少要有这么多余额（实际按用量扣）
+// 重要引用分析单独用低一些的倍数：一篇论文封顶约 230 credit
+export const NOTABLE_MARKUP = Number(process.env.NOTABLE_MARKUP) || 25;
 const MARKUP = Number(process.env.CREDIT_MARKUP) || 40; // 成本之上的加价倍数
 
 /** 充值档位：付多少美元（Stripe）或人民币（支付宝），得多少 credit */
@@ -37,7 +39,11 @@ export const PRICES = {
 export type Price = (typeof PRICES)[keyof typeof PRICES];
 
 /** 一次聊天要扣多少 credit；拿不到用量（比如中途被停止）时按最低 1 个算 */
-export function chatCost(u: Usage | null | undefined, PRICE: Price = PRICES["claude-opus-5-5"]): number {
+export function chatCost(
+  u: Usage | null | undefined,
+  PRICE: Price = PRICES["claude-opus-5-5"],
+  markup = MARKUP,
+): number {
   if (!u) return 1;
   const usd =
     ((u.input_tokens ?? 0) * PRICE.input +
@@ -45,7 +51,7 @@ export function chatCost(u: Usage | null | undefined, PRICE: Price = PRICES["cla
       (u.cache_read_input_tokens ?? 0) * PRICE.cacheRead +
       (u.cache_creation_input_tokens ?? 0) * PRICE.cacheWrite) /
     1_000_000;
-  return Math.max(1, Math.ceil(usd * 100 * MARKUP));
+  return Math.max(1, Math.ceil(usd * 100 * markup));
 }
 
 /**
