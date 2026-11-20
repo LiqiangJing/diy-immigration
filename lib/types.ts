@@ -17,6 +17,7 @@ export type Conversation = {
   title: string;
   updatedAt: number;
   messages: ChatMessage[];
+  caseId?: string; // 关联的案件
 };
 
 export type DocFile = {
@@ -27,6 +28,7 @@ export type DocFile = {
   updatedAt: number;
   chat: ChatMessage[];
   undo?: string; // AI 上一次修改之前的内容
+  caseId?: string; // 所属案件
 };
 
 export type CaseType = "NIW" | "EB-1A";
@@ -37,6 +39,7 @@ export type ImmigrationCase = {
   type: CaseType;
   createdAt: number;
   done: string[]; // 已完成的材料项 id
+  files?: Attachment[]; // 案件文件（内容存在 IndexedDB）
 };
 
 /** 发给 /api/chat 的消息结构 */

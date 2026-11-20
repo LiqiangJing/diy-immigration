@@ -4,8 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Chat from "@/components/Chat";
-import type { DocContext } from "@/components/Chat";
-import { uid } from "@/lib/types";
+import type { DocContext, Library } from "@/components/Chat";
 import type { Conversation, DocFile } from "@/lib/types";
 
 export const DOC_KINDS = [
@@ -22,31 +21,86 @@ const SUGGESTIONS = [
   "检查全文有没有夸大或缺少证据支撑的表述",
 ];
 
-type Props = {
+/** 文档列表：新建 + 已有文档 */
+export function DocList({
+  docs,
+  onCreate,
+  onOpen,
+}: {
   docs: DocFile[];
-  setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
-  fileData: Map<string, string>;
+  onCreate?: (kind: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <>
+      {onCreate && (
+        <>
+          <h3 className="section-title">新建文档</h3>
+          <div className="case-list">
+            {DOC_KINDS.map((k) => (
+              <button key={k.kind} className="case-card" onClick={() => onCreate(k.kind)}>
+                <strong>+ {k.kind}</strong>
+                <span className="case-meta">{k.desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {docs.length > 0 && (
+        <>
+          {onCreate && <h3 className="section-title">已有文档</h3>}
+          <div className="case-list">
+            {[...docs]
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .map((d) => (
+                <button key={d.id} className="case-card" onClick={() => onOpen(d.id)}>
+                  <span className="tag">{d.kind}</span>
+                  <strong>{d.title}</strong>
+                  <span className="case-meta">
+                    {d.content.length} 字符 · 更新于 {new Date(d.updatedAt).toLocaleString("zh-CN")}
+                  </span>
+                </button>
+              ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+type WorkspaceProps = {
+  doc: DocFile;
+  patch: (fn: (d: DocFile) => DocFile) => void;
+  onBack: () => void;
+  onDelete: () => void;
+  backLabel: string;
+  library?: Library;
+  contextLine?: string;
   profileText: string;
 };
 
-export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
-  const [openId, setOpenId] = useState<string | null>(null);
+/** 文档工作区：左边文档，右边聊天 */
+export function DocWorkspace({
+  doc,
+  patch,
+  onBack,
+  onDelete,
+  backLabel,
+  library,
+  contextLine,
+  profileText,
+}: WorkspaceProps) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [pane, setPane] = useState<"doc" | "chat">("doc"); // 窄屏时切换
   const [copied, setCopied] = useState(false);
 
-  const doc = docs.find((d) => d.id === openId) ?? null;
   // 流式输出期间 Chat 需要读到最新内容，而不是发消息那一刻的闭包
-  const latest = useRef({ content: "", snapshotted: false });
-  if (doc) latest.current.content = doc.content;
+  const latest = useRef({ content: doc.content, snapshotted: false, patch });
+  latest.current.content = doc.content;
+  latest.current.patch = patch;
 
-  const patch = (id: string, fn: (d: DocFile) => DocFile) =>
-    setDocs((list) => list.map((d) => (d.id === id ? fn(d) : d)));
-
-  const ctx: DocContext | undefined = useMemo(() => {
-    if (!doc) return undefined;
-    const id = doc.id;
-    return {
+  const ctx: DocContext = useMemo(
+    () => ({
       title: doc.title,
       kind: doc.kind,
       getContent: () => latest.current.content,
@@ -58,63 +112,16 @@ export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
         const before = latest.current.content;
         latest.current.snapshotted = true;
         latest.current.content = content;
-        patch(id, (d) => ({
+        latest.current.patch((d) => ({
           ...d,
           content,
           updatedAt: Date.now(),
           undo: first ? before : d.undo,
         }));
       },
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.id, doc?.title, doc?.kind]);
-
-  function create(kind: string) {
-    const d: DocFile = { id: uid(), title: kind, kind, content: "", updatedAt: Date.now(), chat: [] };
-    setDocs((list) => [d, ...list]);
-    setOpenId(d.id);
-    setMode("edit");
-  }
-
-  if (!doc || !ctx) {
-    return (
-      <div className="cases">
-        <div className="case-head">
-          <div>
-            <h2>文档</h2>
-            <p>在这里写申请文书：左边是文档，右边和 AI 对话，它会直接在文档里起草和修改。</p>
-          </div>
-        </div>
-        <h3 className="section-title">新建文档</h3>
-        <div className="case-list">
-          {DOC_KINDS.map((k) => (
-            <button key={k.kind} className="case-card" onClick={() => create(k.kind)}>
-              <strong>+ {k.kind}</strong>
-              <span className="case-meta">{k.desc}</span>
-            </button>
-          ))}
-        </div>
-        {docs.length > 0 && (
-          <>
-            <h3 className="section-title">我的文档</h3>
-            <div className="case-list">
-              {[...docs]
-                .sort((a, b) => b.updatedAt - a.updatedAt)
-                .map((d) => (
-                  <button key={d.id} className="case-card" onClick={() => setOpenId(d.id)}>
-                    <span className="tag">{d.kind}</span>
-                    <strong>{d.title}</strong>
-                    <span className="case-meta">
-                      {d.content.length} 字符 · 更新于 {new Date(d.updatedAt).toLocaleString("zh-CN")}
-                    </span>
-                  </button>
-                ))}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
+    }),
+    [doc.title, doc.kind],
+  );
 
   const conv: Conversation = { id: doc.id, title: doc.title, updatedAt: doc.updatedAt, messages: doc.chat };
 
@@ -131,21 +138,21 @@ export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
 
       <section className="doc-pane">
         <div className="doc-bar">
-          <button className="back" onClick={() => setOpenId(null)}>
-            ← 全部文档
+          <button className="back" onClick={onBack}>
+            ← {backLabel}
           </button>
           <input
             className="doc-title"
             value={doc.title}
             aria-label="文档标题"
-            onChange={(e) => patch(doc.id, (d) => ({ ...d, title: e.target.value, updatedAt: Date.now() }))}
+            onChange={(e) => patch((d) => ({ ...d, title: e.target.value, updatedAt: Date.now() }))}
           />
           <div className="doc-actions">
             {doc.undo !== undefined && (
               <button
                 className="btn-ghost small"
                 title="恢复到 AI 上一次修改之前的内容"
-                onClick={() => patch(doc.id, (d) => ({ ...d, content: d.undo ?? d.content, undo: undefined }))}
+                onClick={() => patch((d) => ({ ...d, content: d.undo ?? d.content, undo: undefined }))}
               >
                 ↩ 撤销 AI 修改
               </button>
@@ -186,9 +193,7 @@ export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
             <button
               className="btn-ghost small danger"
               onClick={() => {
-                if (!confirm(`删除文档「${doc.title}」？此操作无法撤销。`)) return;
-                setDocs((list) => list.filter((d) => d.id !== doc.id));
-                setOpenId(null);
+                if (confirm(`删除文档「${doc.title}」？此操作无法撤销。`)) onDelete();
               }}
             >
               删除
@@ -202,7 +207,7 @@ export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
               className="doc-editor"
               value={doc.content}
               placeholder={"在这里直接写，或者在右边让 AI 起草。\n\n支持 Markdown：# 标题、**加粗**、- 列表"}
-              onChange={(e) => patch(doc.id, (d) => ({ ...d, content: e.target.value, updatedAt: Date.now() }))}
+              onChange={(e) => patch((d) => ({ ...d, content: e.target.value, updatedAt: Date.now() }))}
             />
           ) : doc.content.trim() ? (
             <div className="doc-preview md">
@@ -220,18 +225,19 @@ export default function Docs({ docs, setDocs, fileData, profileText }: Props) {
           conv={conv}
           addConv={() => {}}
           patchConv={(_, fn) =>
-            patch(doc.id, (d) => ({
+            patch((d) => ({
               ...d,
               chat: fn({ id: d.id, title: d.title, updatedAt: d.updatedAt, messages: d.chat }).messages,
             }))
           }
-          fileData={fileData}
           profileText={profileText}
           firstName=""
           docCtx={ctx}
+          library={library}
+          contextLine={contextLine}
           intro={{
             title: `和 AI 一起写「${doc.kind}」`,
-            desc: "它能看到左边文档的最新内容，并直接在文档里起草和修改。",
+            desc: "它能看到左边文档的最新内容，并直接在文档里起草和修改。点「引用」可以把案件里的文件和其他文档给它看。",
             suggestions: SUGGESTIONS,
           }}
         />

@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { uid } from "@/lib/types";
 import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/types";
+import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
 
 /** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
@@ -23,46 +24,47 @@ const SUGGESTIONS = [
   "从准备到递交大概要多久？",
 ];
 
-const ACCEPT = ".pdf,.txt,.md,.png,.jpg,.jpeg,.webp,.gif";
-const MAX_FILE = 20 * 1024 * 1024;
-const TEXT_EXT = /\.(txt|md)$/i;
-
-function mimeOf(f: File): string | null {
-  if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) return "application/pdf";
-  if (["image/png", "image/jpeg", "image/webp", "image/gif"].includes(f.type)) return f.type;
-  if (f.type.startsWith("text/") || TEXT_EXT.test(f.name)) return "text/plain";
-  return null;
-}
-
-function toBase64(f: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(f);
-  });
-}
-
-const fmtSize = (n: number) =>
-  n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+/** 聊天里可以引用的案件资料 */
+export type Library = {
+  files: Attachment[];
+  docs: { id: string; title: string; content: string }[];
+};
 
 type Props = {
   conv: Conversation | null;
   addConv: (c: Conversation) => void;
   patchConv: (id: string, fn: (c: Conversation) => Conversation) => void;
-  fileData: Map<string, string>;
   profileText: string;
   firstName: string;
   docCtx?: DocContext;
   intro?: { title: string; desc: string; suggestions: string[] };
+  library?: Library;
+  contextLine?: string; // 例如「当前案件：xxx（NIW）」，会随档案一起发给模型
+  caseLink?: {
+    cases: { id: string; name: string }[];
+    value: string | null;
+    onChange: (id: string | null) => void;
+  };
 };
 
-export default function Chat({ conv, addConv, patchConv, fileData, profileText, firstName, docCtx, intro }: Props) {
+export default function Chat({
+  conv,
+  addConv,
+  patchConv,
+  profileText,
+  firstName,
+  docCtx,
+  intro,
+  library,
+  contextLine,
+  caseLink,
+}: Props) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [picking, setPicking] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
@@ -73,28 +75,24 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
   }, [messages.length, messages[messages.length - 1]?.text]);
 
   async function addFiles(files: FileList | File[]) {
-    const problems: string[] = [];
-    const added: Attachment[] = [];
-    for (const f of Array.from(files)) {
-      const type = mimeOf(f);
-      if (!type) {
-        problems.push(`「${f.name}」格式暂不支持（目前支持 PDF、图片、TXT、Markdown）`);
-        continue;
-      }
-      if (f.size > MAX_FILE) {
-        problems.push(`「${f.name}」超过 20 MB`);
-        continue;
-      }
-      try {
-        const id = uid();
-        fileData.set(id, await toBase64(f));
-        added.push({ id, name: f.name, type, size: f.size });
-      } catch {
-        problems.push(`「${f.name}」读取失败`);
-      }
-    }
+    const { added, problems } = await saveUploads(files);
     if (added.length) setPending((p) => [...p, ...added]);
     setNotice(problems.join("；"));
+  }
+
+  const addPending = (a: Attachment) =>
+    setPending((p) => (p.some((x) => x.id === a.id) ? p : [...p, a]));
+
+  // 引用案件里的文档：把它此刻的内容存成一个文本附件
+  async function citeDoc(d: Library["docs"][number]) {
+    const att: Attachment = {
+      id: uid(),
+      name: `${d.title || "文档"}.md`,
+      type: "text/plain",
+      size: new Blob([d.content]).size,
+    };
+    await putFile(att.id, textToBase64(d.content));
+    addPending(att);
   }
 
   async function send(text: string) {
@@ -140,17 +138,23 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
     const ctrl = new AbortController();
     abort.current = ctrl;
 
-    const payload: ApiMessage[] = history
-      .filter((m) => m.text.trim() || m.attachments?.length)
-      .map((m) => ({
-        role: m.role,
-        text: m.text,
-        attachments: m.attachments?.map((a) => ({
-          name: a.name,
-          type: a.type,
-          data: fileData.get(a.id),
+    const payload: ApiMessage[] = await Promise.all(
+      history
+        .filter((m) => m.text.trim() || m.attachments?.length)
+        .map(async (m) => ({
+          role: m.role,
+          text: m.text,
+          attachments:
+            m.attachments &&
+            (await Promise.all(
+              m.attachments.map(async (a) => ({
+                name: a.name,
+                type: a.type,
+                data: await getFile(a.id),
+              })),
+            )),
         })),
-      }));
+    );
 
     let raw = "";
     let suffix = "";
@@ -165,7 +169,7 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: payload,
-          profile: profileText,
+          profile: [profileText, contextLine].filter(Boolean).join("\n"),
           doc: docCtx
             ? { title: docCtx.title, kind: docCtx.kind, content: docCtx.getContent() }
             : undefined,
@@ -241,10 +245,7 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
               <span className="chip-size">{fmtSize(a.size)}</span>
               <button
                 aria-label={`移除 ${a.name}`}
-                onClick={() => {
-                  fileData.delete(a.id);
-                  setPending((p) => p.filter((x) => x.id !== a.id));
-                }}
+                onClick={() => setPending((p) => p.filter((x) => x.id !== a.id))}
               >
                 ×
               </button>
@@ -281,6 +282,60 @@ export default function Chat({ conv, addConv, patchConv, fileData, profileText, 
           </svg>
           <span>上传文件</span>
         </button>
+        {library && (
+          <div className="picker-wrap">
+            <button className="attach" onClick={() => setPicking((v) => !v)} aria-expanded={picking}>
+              @ <span>引用案件资料</span>
+            </button>
+            {picking && (
+              <div className="picker">
+                {library.files.length + library.docs.length === 0 && (
+                  <div className="picker-empty">这个案件里还没有文件或其他文档。</div>
+                )}
+                {library.docs.length > 0 && <div className="picker-label">文档</div>}
+                {library.docs.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => {
+                      citeDoc(d);
+                      setPicking(false);
+                    }}
+                  >
+                    {d.title || "未命名文档"}
+                  </button>
+                ))}
+                {library.files.length > 0 && <div className="picker-label">文件</div>}
+                {library.files.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => {
+                      addPending(f);
+                      setPicking(false);
+                    }}
+                  >
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {caseLink && caseLink.cases.length > 0 && (
+          <select
+            className="case-link"
+            aria-label="关联案件"
+            value={caseLink.value ?? ""}
+            onChange={(e) => caseLink.onChange(e.target.value || null)}
+          >
+            <option value="">不关联案件</option>
+            {caseLink.cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                关联：{c.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <span className="spacer" />
         <input
           ref={fileInput}
           type="file"

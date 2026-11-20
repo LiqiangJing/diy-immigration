@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Chat from "@/components/Chat";
-import Cases from "@/components/Cases";
+import Cases, { caseLibrary, caseLine } from "@/components/Cases";
 import Profile from "@/components/Profile";
-import Docs from "@/components/Docs";
 import { emptyProfile, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
@@ -29,7 +28,7 @@ function save(key: string, value: unknown) {
   } catch {}
 }
 
-type View = "chat" | "docs" | "cases" | "profile";
+type View = "chat" | "cases" | "profile";
 
 export default function Home() {
   const [view, setView] = useState<View>("chat");
@@ -47,8 +46,8 @@ export default function Home() {
     setChatKey((k) => k + 1);
     setSidebarOpen(false);
   };
-  // 附件内容（base64）只保存在内存里，不写入 localStorage
-  const fileData = useRef(new Map<string, string>());
+  // 还没发出第一条消息的新会话要关联的案件
+  const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     setConvs(load<Conversation[]>(CONV_KEY, []));
@@ -75,12 +74,17 @@ export default function Home() {
       setConvs((list) => list.map((c) => (c.id === id ? fn(c) : c))),
     [],
   );
-  const addConv = useCallback((c: Conversation) => {
-    setConvs((list) => [c, ...list]);
-    setActiveId(c.id);
-  }, []);
+  const addConv = useCallback(
+    (c: Conversation) => {
+      setConvs((list) => [{ ...c, caseId: pendingCaseId ?? undefined }, ...list]);
+      setActiveId(c.id);
+    },
+    [pendingCaseId],
+  );
 
   const active = convs.find((c) => c.id === activeId) ?? null;
+  const linkedId = active ? (active.caseId ?? null) : pendingCaseId;
+  const linkedCase = cases.find((c) => c.id === linkedId) ?? null;
   const sorted = [...convs].sort((a, b) => b.updatedAt - a.updatedAt);
 
   const go = (v: View) => {
@@ -103,13 +107,9 @@ export default function Home() {
             <strong>聊天</strong>
             <span>移民问题，随时问</span>
           </button>
-          <button className={view === "docs" ? "on" : ""} onClick={() => go("docs")}>
-            <strong>文档</strong>
-            <span>边聊边写 Petition Letter、推荐信</span>
-          </button>
           <button className={view === "cases" ? "on" : ""} onClick={() => go("cases")}>
             <strong>案件</strong>
-            <span>准备 NIW、EB-1A 案件材料</span>
+            <span>文档、文件、材料清单</span>
           </button>
           <button className={view === "profile" ? "on" : ""} onClick={() => go("profile")}>
             <strong>我的档案</strong>
@@ -166,19 +166,27 @@ export default function Home() {
             conv={active}
             addConv={addConv}
             patchConv={patchConv}
-            fileData={fileData.current}
             profileText={profileToText(profile)}
             firstName={(profile.chineseName || profile.firstName).trim()}
-          />
-        ) : view === "docs" ? (
-          <Docs
-            docs={docs}
-            setDocs={setDocs}
-            fileData={fileData.current}
-            profileText={profileToText(profile)}
+            library={linkedCase ? caseLibrary(linkedCase, docs) : undefined}
+            contextLine={linkedCase ? caseLine(linkedCase) : undefined}
+            caseLink={{
+              cases,
+              value: linkedCase?.id ?? null,
+              onChange: (id) =>
+                active
+                  ? patchConv(active.id, (c) => ({ ...c, caseId: id ?? undefined }))
+                  : setPendingCaseId(id),
+            }}
           />
         ) : view === "cases" ? (
-          <Cases cases={cases} setCases={setCases} />
+          <Cases
+            cases={cases}
+            setCases={setCases}
+            docs={docs}
+            setDocs={setDocs}
+            profileText={profileToText(profile)}
+          />
         ) : (
           <Profile profile={profile} setProfile={setProfile} />
         )}
