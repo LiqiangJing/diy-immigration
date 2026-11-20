@@ -41,9 +41,11 @@ type Props = {
   addConv: (c: Conversation) => void;
   patchConv: (id: string, fn: (c: Conversation) => Conversation) => void;
   fileData: Map<string, string>;
+  profileText: string;
+  firstName: string;
 };
 
-export default function Chat({ conv, addConv, patchConv, fileData }: Props) {
+export default function Chat({ conv, addConv, patchConv, fileData, profileText, firstName }: Props) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -142,7 +144,7 @@ export default function Chat({ conv, addConv, patchConv, fileData }: Props) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: payload }),
+        body: JSON.stringify({ messages: payload, profile: profileText }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -264,7 +266,7 @@ export default function Chat({ conv, addConv, patchConv, fileData }: Props) {
     return (
       <div className="chat chat-empty">
         <div className="hero">
-          <h1>你好，我是 Pathway</h1>
+          <h1>你好{firstName ? ` ${firstName}` : ""}，我是 DIY Immigration</h1>
           <p>帮你自己准备 NIW 和 EB-1A 申请：评估背景、分析材料、修改文书</p>
           <div className="suggestions">
             {SUGGESTIONS.map((s) => (

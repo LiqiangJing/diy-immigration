@@ -158,6 +158,28 @@ button:disabled { cursor: not-allowed; }
 .item:has(input:checked) > span { color: var(--muted); text-decoration: line-through; }
 .item:has(input:checked) small { text-decoration: none; }
 
+/* ---------- Profile ---------- */
+.profile { display: flex; flex-direction: column; gap: 16px; }
+.profile .case-head { margin-bottom: 4px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.card > label, .card > .field, .card > .grid2, .card > .degree { width: 100%; }
+.card h3 { margin: 0; font-size: 16px; }
+.card h4 { margin: 10px 0 0; font-size: 14px; }
+.card .group-note { margin: -8px 0 0; }
+.profile label, .profile .field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; font-weight: 500; }
+.profile small { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.profile input:not([type="radio"]), .profile select {
+  font: inherit; font-weight: 400; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.degree { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--bg); display: flex; flex-direction: column; gap: 12px; }
+.radios { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.radios label { flex-direction: row; align-items: center; gap: 6px; font-weight: 400; cursor: pointer; }
+.radios input { accent-color: var(--accent); }
+.link-danger { align-self: flex-start; color: var(--danger); font-size: 13px; padding: 0; }
+.link-danger:hover { text-decoration: underline; }
+
 /* ---------- 窄屏 ---------- */
 @media (max-width: 760px) {
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; transform: translateX(-100%); transition: transform .2s; }
@@ -168,4 +190,5 @@ button:disabled { cursor: not-allowed; }
   .cases { padding-top: 56px; }
   .messages-inner { padding-top: 52px; }
   .history-del { opacity: 1; }
+  .grid2 { grid-template-columns: 1fr; }
 }

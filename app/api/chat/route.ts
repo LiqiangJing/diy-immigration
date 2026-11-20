@@ -48,7 +48,7 @@ function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
 }
 
 export async function POST(req: Request) {
-  let body: { messages?: ApiMessage[] };
+  let body: { messages?: ApiMessage[]; profile?: string };
   try {
     body = await req.json();
   } catch {
@@ -62,6 +62,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "消息为空" }, { status: 400 });
   }
 
+  const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 4000) : "";
+  const system = profile
+    ? `${SYSTEM}\n\n以下是用户在「My Profile」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`
+    : SYSTEM;
+
   const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
 
   // 没有配置 API Key 时，走本机 Claude Code 订阅登录（仅供本地测试）
@@ -74,7 +79,7 @@ export async function POST(req: Request) {
       content.push({ type: "text", text: last ? "【当前消息 · 用户】" : `【此前对话 · ${who}】` });
       content.push(...(m.content as Anthropic.Beta.BetaContentBlockParam[]));
     });
-    return new Response(streamViaClaudeCli({ system: SYSTEM, content, signal: req.signal }), {
+    return new Response(streamViaClaudeCli({ system, content, signal: req.signal }), {
       headers,
     });
   }
@@ -90,7 +95,7 @@ export async function POST(req: Request) {
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       cache_control: { type: "ephemeral" },
-      system: SYSTEM,
+      system,
       messages,
     },
     { signal: req.signal },
