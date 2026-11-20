@@ -16,6 +16,7 @@ type Props = {
   setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
   profileText: string;
   petitioner: string;
+  citationReport: string; // 由「我的档案」的学术数据生成，可能为空
 };
 
 type Tab = "docs" | "files" | "checklist" | "pack";
@@ -32,7 +33,7 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-export default function Cases({ cases, setCases, docs, setDocs, profileText, petitioner }: Props) {
+export default function Cases({ cases, setCases, docs, setDocs, profileText, petitioner, citationReport }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
@@ -83,11 +84,12 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
   }
 
   function createDoc(kind: string) {
+    const report = kind === "论文与引用记录" ? citationReport : "";
     const d: DocFile = {
       id: uid(),
-      title: kind,
+      title: report ? "Publication and Citation Record" : kind,
       kind,
-      content: "",
+      content: report,
       updatedAt: Date.now(),
       chat: [],
       caseId: open?.id,

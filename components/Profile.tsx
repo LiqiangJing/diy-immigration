@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { DEGREE_TYPES, REVIEW_OPTIONS } from "@/lib/profile";
 import type { Degree, Profile as ProfileData, Related } from "@/lib/profile";
 import { uid } from "@/lib/types";
@@ -107,7 +108,62 @@ function DegreeFields({
   );
 }
 
+type Candidate = {
+  id: string;
+  name: string;
+  institution: string;
+  papers: number;
+  citations: number;
+  hIndex: number | null;
+};
+
 export default function Profile({ profile: p, setProfile }: Props) {
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [scholarError, setScholarError] = useState("");
+  const fullName = `${p.firstName} ${p.lastName}`.trim();
+
+  async function call(query: string) {
+    const res = await fetch(`/api/scholar?${query}`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error(data?.error ?? "获取失败，请稍后再试。");
+    return data;
+  }
+
+  async function searchAuthor() {
+    setLoading(true);
+    setScholarError("");
+    setCandidates(null);
+    try {
+      const data = await call(`q=${encodeURIComponent(fullName)}`);
+      setCandidates(data.candidates);
+    } catch (e) {
+      setScholarError(e instanceof Error ? e.message : "获取失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function pickAuthor(c: Candidate) {
+    setLoading(true);
+    setScholarError("");
+    try {
+      const data = await call(`id=${c.id}`);
+      set({
+        papers: String(data.author.papers ?? ""),
+        citations: String(data.author.citations ?? ""),
+        hIndex: data.author.hIndex == null ? "" : String(data.author.hIndex),
+        publications: data.works,
+        scholarSource: { name: data.author.name, fetchedAt: Date.now() },
+      });
+      setCandidates(null);
+    } catch (e) {
+      setScholarError(e instanceof Error ? e.message : "获取失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const set = (patch: Partial<ProfileData>) =>
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
 
@@ -187,6 +243,36 @@ export default function Profile({ profile: p, setProfile }: Props) {
             placeholder="https://scholar.google.com/... 或 https://www.semanticscholar.org/author/..."
           />
         </label>
+        <div className="scholar-fetch">
+          <button className="btn-accent" disabled={loading || !fullName} onClick={searchAuthor}>
+            {loading ? "正在获取…" : "一键获取论文和引用数据"}
+          </button>
+          <small>
+            {fullName
+              ? `按英文姓名「${fullName}」在 OpenAlex 学术数据库里查找，选中你本人后自动填入下面的数字和论文列表。`
+              : "请先在上面填写英文姓名。"}
+          </small>
+        </div>
+        {scholarError && <div className="notice">{scholarError}</div>}
+        {candidates && (
+          <div className="candidates">
+            {candidates.length === 0 ? (
+              <small>没有找到同名作者。可以检查姓名拼写，或者手动填写下面的数字。</small>
+            ) : (
+              <>
+                <small>找到以下作者，请选择你本人：</small>
+                {candidates.map((c) => (
+                  <button key={c.id} onClick={() => pickAuthor(c)} disabled={loading}>
+                    <strong>{c.name}</strong>
+                    <span>
+                      {c.institution || "机构未知"} · {c.papers} 篇论文 · 被引 {c.citations} 次
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
         <div className="grid2">
           <label>
             论文数
@@ -196,7 +282,37 @@ export default function Profile({ profile: p, setProfile }: Props) {
             总引用数
             <input value={p.citations} onChange={(e) => set({ citations: e.target.value })} inputMode="numeric" />
           </label>
+          <label>
+            h-index
+            <input value={p.hIndex} onChange={(e) => set({ hIndex: e.target.value })} inputMode="numeric" />
+          </label>
         </div>
+        {p.publications.length > 0 && (
+          <details className="pubs">
+            <summary>
+              已获取 {p.publications.length} 篇论文
+              {p.scholarSource &&
+                `（${p.scholarSource.name}，${new Date(p.scholarSource.fetchedAt).toLocaleDateString("zh-CN")} 获取）`}
+            </summary>
+            <small>
+              数据来自 OpenAlex，和 Google Scholar 的数字通常会有出入，写进文书前请以你实际要引用的来源为准。在案件里新建「论文与引用记录」文档可以把这份列表变成一份
+              Exhibit。
+            </small>
+            <ol>
+              {p.publications.map((w, i) => (
+                <li key={i}>
+                  {w.title}
+                  <span>
+                    {[w.venue, w.year, `被引 ${w.citations}`].filter(Boolean).join(" · ")}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <button className="link-danger" onClick={() => set({ publications: [], scholarSource: null })}>
+              清除论文列表
+            </button>
+          </details>
+        )}
         <div className="field">
           <span>
             审稿次数

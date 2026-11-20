@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Chat from "@/components/Chat";
 import Cases, { caseLibrary, caseLine } from "@/components/Cases";
 import Profile from "@/components/Profile";
-import { emptyProfile, profileToText } from "@/lib/profile";
+import { citationReport, emptyProfile, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
@@ -187,6 +187,7 @@ export default function Home() {
             setDocs={setDocs}
             profileText={profileToText(profile)}
             petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
+            citationReport={citationReport(profile)}
           />
         ) : (
           <Profile profile={profile} setProfile={setProfile} />

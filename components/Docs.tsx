@@ -12,6 +12,7 @@ export const DOC_KINDS = [
   { kind: "推荐信", desc: "Recommendation Letter 草稿" },
   { kind: "Proposed Endeavor 陈述", desc: "NIW 拟从事事业的说明" },
   { kind: "Summary of Contributions", desc: "个人贡献总结" },
+  { kind: "论文与引用记录", desc: "用「我的档案」里获取的学术数据自动生成" },
   { kind: "其他文档", desc: "RFE 回复、个人陈述等" },
 ];
 

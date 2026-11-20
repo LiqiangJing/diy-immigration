@@ -9,6 +9,8 @@ export type Degree = {
   related: Related;
 };
 
+export type Publication = { title: string; year: number | null; venue: string; citations: number };
+
 export type Profile = {
   firstName: string;
   lastName: string;
@@ -19,6 +21,9 @@ export type Profile = {
   scholarUrl: string;
   papers: string;
   citations: string;
+  hIndex: string;
+  publications: Publication[];
+  scholarSource: { name: string; fetchedAt: number } | null; // 一键获取的数据来源
   reviews: string;
   currentPosition: string;
   sameField: "" | "yes" | "no";
@@ -42,6 +47,9 @@ export const emptyProfile = (): Profile => ({
   scholarUrl: "",
   papers: "",
   citations: "",
+  hIndex: "",
+  publications: [],
+  scholarSource: null,
   reviews: "",
   currentPosition: "",
   sameField: "",
@@ -80,6 +88,13 @@ export function profileToText(p: Profile): string {
   add("学术主页链接", p.scholarUrl);
   add("论文数", p.papers);
   add("总引用数", p.citations);
+  add("h-index", p.hIndex);
+  if (p.publications.length) {
+    lines.push(`引用最多的论文（数据来自 OpenAlex，共 ${p.publications.length} 篇，列出前 15 篇）：`);
+    p.publications.slice(0, 15).forEach((w, i) =>
+      lines.push(`  ${i + 1}. ${w.title}${w.venue ? `，${w.venue}` : ""}${w.year ? `，${w.year}` : ""}，被引 ${w.citations} 次`),
+    );
+  }
   add("审稿次数", p.reviews);
   if (p.sameField === "yes") lines.push("未来工作：将继续在同一或相近领域工作");
   if (p.sameField === "no")
@@ -88,4 +103,32 @@ export function profileToText(p: Profile): string {
     lines.push(`仍在持续做研究、发表论文${p.nextPaper ? `，预计下一篇发表时间 ${p.nextPaper}` : ""}`);
   if (p.activeResearch === "no") lines.push("已不再做研究或发表论文");
   return lines.join("\n");
+}
+
+/** 英文的论文与引用记录，可作为案件文档（Exhibit）使用；没有数据时返回空串 */
+export function citationReport(p: Profile): string {
+  if (!p.publications.length) return "";
+  const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
+  const date = p.scholarSource
+    ? new Date(p.scholarSource.fetchedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    : "";
+  return [
+    `# Publication and Citation Record of ${name}`,
+    "",
+    `**Total publications:** ${p.papers || p.publications.length}`,
+    "",
+    `**Total citations:** ${p.citations || "N/A"}`,
+    "",
+    `**h-index:** ${p.hIndex || "N/A"}`,
+    "",
+    `Source: OpenAlex (openalex.org)${date ? `, retrieved ${date}` : ""}. Publications are listed by number of citations.`,
+    "",
+    "## Publications",
+    "",
+    ...p.publications.map(
+      (w, i) =>
+        `${i + 1}. ${w.title}.${w.venue ? ` ${w.venue},` : ""}${w.year ? ` ${w.year}.` : ""} Cited by ${w.citations}.`,
+    ),
+    "",
+  ].join("\n");
 }
