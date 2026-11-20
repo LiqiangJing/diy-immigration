@@ -64,8 +64,8 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
         <span>Credit 余额</span>
         <strong>{me.user.credits}</strong>
         <small>
-          聊天和文档写作按每次实际用量扣，一般的一轮问答是几个 credit，带大文件或长文书会更多；一键获取学术数据每次{" "}
-          {me.scholarCost} 个。
+          按每次实际用量扣：普通问答每次几十个，一次案件评估约 200，起草或修改一封信每次约 200–300，带大文件会更多。
+          做完一个案件一般需要 5000–10000。一键获取学术数据每次 {me.scholarCost} 个。
         </small>
       </section>
 

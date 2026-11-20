@@ -3,17 +3,19 @@ import { db } from "./db";
 /**
  * Credit 规则：1 credit = 0.01 美元的面值。
  * 聊天按实际 token 用量 × 加价倍数扣；其他功能按次扣固定数额。
+ * 倍数定在 40：实测做完一个案件的模型成本约 1–3 美元，这样用户做完一个案件大约花 50–100 美元。
  */
 
-export const SIGNUP_BONUS = 100; // 新用户赠送
-export const SCHOLAR_COST = 5; // 一键获取学术数据
-const MARKUP = Number(process.env.CREDIT_MARKUP) || 2; // 成本之上的加价倍数
+export const SIGNUP_BONUS = 200; // 新用户赠送，大约够做一次案件评估
+export const SCHOLAR_COST = 20; // 一键获取学术数据
+const MARKUP = Number(process.env.CREDIT_MARKUP) || 40; // 成本之上的加价倍数
 
 /** 充值档位：付多少美元（Stripe）或人民币（支付宝），得多少 credit */
 export const PACKS = [
   { id: "p5", usd: 5, cny: 36, credits: 500 },
   { id: "p20", usd: 20, cny: 145, credits: 2200 },
   { id: "p50", usd: 50, cny: 360, credits: 6000 },
+  { id: "p100", usd: 100, cny: 720, credits: 13000 },
 ] as const;
 
 export type Usage = {
