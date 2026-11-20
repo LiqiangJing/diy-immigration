@@ -5,6 +5,8 @@ import { DocList, DocWorkspace } from "@/components/Docs";
 import type { Library } from "@/components/Chat";
 import Packer from "@/components/Packer";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
+import { workflowsFor } from "@/lib/skills";
+import type { Workflow } from "@/lib/skills";
 import { ACCEPT, dropFile, fmtSize, saveUploads } from "@/lib/files";
 import { uid } from "@/lib/types";
 import type { CaseType, DocFile, ImmigrationCase } from "@/lib/types";
@@ -83,7 +85,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
     setOpenId(c.id);
   }
 
-  function createDoc(kind: string) {
+  function createDoc(kind: string, workflow?: Workflow) {
     const report = kind === "论文与引用记录" ? citationReport : "";
     const d: DocFile = {
       id: uid(),
@@ -93,6 +95,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
       updatedAt: Date.now(),
       chat: [],
       caseId: open?.id,
+      skill: workflow?.id,
     };
     setDraft(d);
   }
@@ -122,6 +125,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
         backLabel={owner ? owner.name : "全部案件"}
         library={owner ? caseLibrary(owner, docs, openDoc.id) : undefined}
         contextLine={owner ? caseLine(owner) : undefined}
+        caseType={owner?.type}
         profileText={profileText}
       />
     );
@@ -180,7 +184,13 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pet
             <p className="group-note">
               申请文书在这里写。打开文档后右边可以和 AI 对话，它能引用这个案件里的文件和其他文档。
             </p>
-            <DocList docs={caseDocs} onCreate={createDoc} onOpen={setOpenDocId} />
+            <DocList
+              docs={caseDocs}
+              onCreate={createDoc}
+              onOpen={setOpenDocId}
+              workflows={workflowsFor(open.type)}
+              onWorkflow={(w) => createDoc(w.title, w)}
+            />
           </>
         )}
 

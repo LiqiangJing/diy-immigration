@@ -4,6 +4,7 @@
 
 - **聊天**：流式对话，可上传 PDF、图片、TXT、Markdown（简历、推荐信、Petition Letter 草稿等）让 AI 分析
 - **学术数据**：在「我的档案」里按姓名一键从 OpenAlex 获取论文列表、引用数和 h-index，并可生成「论文与引用记录」文档
+- **AI 工作流**：案件里内置案件评估、起草 Petition Letter、起草推荐信、提交前审计、RFE 回复五个流程，基于开源 skills（见 `skills/README.md`）
 - **账户与 credit**：邮箱验证码登录；聊天按用量扣 credit，学术数据按次扣；充值支持支付宝直连（可用沙箱测试）和 Stripe（信用卡）
 - **我的档案**：填写学历、学术记录和未来计划，聊天时自动作为背景提供给 AI
 - **案件**：每个案件是一个项目，包含文档（左边文档、右边聊天，AI 直接起草和修改，可撤销）、上传的文件、材料清单，以及把文书和材料合成一份带目录、Exhibit 分隔页和页码的 PDF 的「打包下载」；聊天可以关联案件并引用其中的文档和文件
@@ -33,6 +34,7 @@ npm run dev                        # http://localhost:3000
 | `components/Packer.tsx`、`lib/packet.ts` | 打包下载：把文书和材料合成一份 PDF |
 | `lib/server/` | 数据库、登录、credit 规则 |
 | `app/api/auth/`、`app/api/billing/`、`app/api/me/` | 登录、充值、余额接口 |
+| `skills/`、`lib/skills.ts`、`lib/server/skills.ts` | 第三方 skills 及其加载 |
 | `lib/docEdits.ts` | 解析并应用 AI 对文档的修改 |
 | `app/api/chat/route.ts` | 调用 Claude API 并流式返回，系统提示词在这里 |
 | `lib/checklists.ts` | NIW / EB-1A 材料清单 |

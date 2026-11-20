@@ -289,6 +289,7 @@ button:disabled { cursor: not-allowed; }
 .balance > span { color: var(--muted); font-size: 13px; }
 .balance > strong { font-size: 34px; font-family: var(--serif); line-height: 1.2; }
 .balance > small { color: var(--muted); font-size: 13px; }
+.case-card.workflow { border-color: var(--accent); background: var(--accent-soft); }
 .case-card:disabled { opacity: .55; cursor: not-allowed; }
 .file-list .plus { color: var(--accent); }
 .file-list .minus { color: var(--muted); }

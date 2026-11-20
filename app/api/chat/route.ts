@@ -3,6 +3,7 @@ import type { ApiMessage } from "@/lib/types";
 import { streamViaClaudeCli } from "@/lib/claudeCli";
 import { getUser } from "@/lib/server/auth";
 import { addCredits, chatCost } from "@/lib/server/credits";
+import { skillPrompt } from "@/lib/server/skills";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
   let body: {
     messages?: ApiMessage[];
     profile?: string;
-    doc?: { title?: string; kind?: string; content?: string };
+    doc?: { title?: string; kind?: string; content?: string; skill?: string; caseType?: string };
   };
   try {
     body = await req.json();
@@ -108,7 +109,9 @@ export async function POST(req: Request) {
     });
   }
   const base = doc
-    ? SYSTEM + docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100))
+    ? SYSTEM +
+      docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100)) +
+      skillPrompt(doc.skill, doc.caseType)
     : SYSTEM;
   const system = profile
     ? `${base}\n\n以下是用户在「我的档案」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`

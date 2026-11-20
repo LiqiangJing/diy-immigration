@@ -29,6 +29,7 @@ export type DocFile = {
   chat: ChatMessage[];
   undo?: string; // AI 上一次修改之前的内容
   caseId?: string; // 所属案件
+  skill?: string; // 用哪个 AI 工作流（见 lib/skills.ts）
 };
 
 /** 打包下载的设置 */

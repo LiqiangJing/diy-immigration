@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Chat from "@/components/Chat";
 import type { DocContext, Library } from "@/components/Chat";
+import { workflowById } from "@/lib/skills";
+import type { Workflow } from "@/lib/skills";
 import type { Conversation, DocFile } from "@/lib/types";
 
 export const DOC_KINDS = [
@@ -15,6 +17,14 @@ export const DOC_KINDS = [
   { kind: "论文与引用记录", desc: "用「我的档案」里获取的学术数据自动生成" },
   { kind: "其他文档", desc: "RFE 回复、个人陈述等" },
 ];
+
+// 这些工作流一开始就自动引用案件里的全部文件
+const AUTO_CITE = new Set([
+  "case-strength-assessor",
+  "niw-petition-narrative",
+  "eb1a-petition-narrative",
+  "petition-audit",
+]);
 
 const SUGGESTIONS = [
   "根据我的档案起草一份初稿",
@@ -27,10 +37,14 @@ export function DocList({
   docs,
   onCreate,
   onOpen,
+  workflows,
+  onWorkflow,
 }: {
   docs: DocFile[];
   onCreate?: (kind: string) => void;
   onOpen: (id: string) => void;
+  workflows?: Workflow[];
+  onWorkflow?: (w: Workflow) => void;
 }) {
   return (
     <>
@@ -52,9 +66,22 @@ export function DocList({
           </div>
         </>
       )}
+      {workflows && onWorkflow && (
+        <>
+          <h3 className="section-title">AI 工作流（按专业流程一步步带你做）</h3>
+          <div className="case-list">
+            {workflows.map((w) => (
+              <button key={w.id} className="case-card workflow" onClick={() => onWorkflow(w)}>
+                <strong>{w.title}</strong>
+                <span className="case-meta">{w.desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {onCreate && (
         <>
-          <h3 className="section-title">新建文档</h3>
+          <h3 className="section-title">新建空白文档</h3>
           <div className="case-list">
             {DOC_KINDS.map((k) => (
               <button key={k.kind} className="case-card" onClick={() => onCreate(k.kind)}>
@@ -77,6 +104,7 @@ type WorkspaceProps = {
   backLabel: string;
   library?: Library;
   contextLine?: string;
+  caseType?: string;
   profileText: string;
 };
 
@@ -89,8 +117,10 @@ export function DocWorkspace({
   backLabel,
   library,
   contextLine,
+  caseType,
   profileText,
 }: WorkspaceProps) {
+  const workflow = workflowById(doc.skill);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [pane, setPane] = useState<"doc" | "chat">("doc"); // 窄屏时切换
   const [copied, setCopied] = useState(false);
@@ -104,6 +134,8 @@ export function DocWorkspace({
     () => ({
       title: doc.title,
       kind: doc.kind,
+      skill: doc.skill,
+      caseType,
       getContent: () => latest.current.content,
       beginTurn: () => {
         latest.current.snapshotted = false;
@@ -121,7 +153,7 @@ export function DocWorkspace({
         }));
       },
     }),
-    [doc.title, doc.kind],
+    [doc.title, doc.kind, doc.skill, caseType],
   );
 
   const conv: Conversation = { id: doc.id, title: doc.title, updatedAt: doc.updatedAt, messages: doc.chat };
@@ -235,12 +267,17 @@ export function DocWorkspace({
           firstName=""
           docCtx={ctx}
           library={library}
+          initialPending={workflow && AUTO_CITE.has(workflow.id) ? library?.files : undefined}
           contextLine={contextLine}
-          intro={{
-            title: `和 AI 一起写「${doc.kind}」`,
-            desc: "它能看到左边文档的最新内容，并直接在文档里起草和修改。点「引用」可以把案件里的文件和其他文档给它看。",
-            suggestions: SUGGESTIONS,
-          }}
+          intro={
+            workflow
+              ? { title: workflow.title, desc: workflow.hint, suggestions: [workflow.starter] }
+              : {
+                  title: `和 AI 一起写「${doc.kind}」`,
+                  desc: "它能看到左边文档的最新内容，并直接在文档里起草和修改。点「引用」可以把案件里的文件和其他文档给它看。",
+                  suggestions: SUGGESTIONS,
+                }
+          }
         />
       </section>
     </div>

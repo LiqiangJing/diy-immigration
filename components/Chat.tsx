@@ -13,6 +13,8 @@ import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdit
 export type DocContext = {
   title: string;
   kind: string;
+  skill?: string;
+  caseType?: string;
   getContent: () => string;
   setContent: (content: string) => void;
   beginTurn: () => void;
@@ -40,6 +42,8 @@ type Props = {
   docCtx?: DocContext;
   intro?: { title: string; desc: string; suggestions: string[] };
   library?: Library;
+  /** 会话还是空的时候，预先放进输入框的附件（例如工作流自动引用案件的全部文件） */
+  initialPending?: Attachment[];
   contextLine?: string; // 例如「当前案件：xxx（NIW）」，会随档案一起发给模型
   caseLink?: {
     cases: { id: string; name: string }[];
@@ -57,11 +61,14 @@ export default function Chat({
   docCtx,
   intro,
   library,
+  initialPending,
   contextLine,
   caseLink,
 }: Props) {
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState<Attachment[]>([]);
+  const [pending, setPending] = useState<Attachment[]>(() =>
+    conv?.messages.length ? [] : (initialPending ?? []),
+  );
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -174,7 +181,13 @@ export default function Chat({
           messages: payload,
           profile: [profileText, contextLine].filter(Boolean).join("\n"),
           doc: docCtx
-            ? { title: docCtx.title, kind: docCtx.kind, content: docCtx.getContent() }
+            ? {
+                title: docCtx.title,
+                kind: docCtx.kind,
+                skill: docCtx.skill,
+                caseType: docCtx.caseType,
+                content: docCtx.getContent(),
+              }
             : undefined,
         }),
         signal: ctrl.signal,
