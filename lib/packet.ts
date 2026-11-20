@@ -158,10 +158,10 @@ function inline(s: string): Run[] {
 /** 把 Markdown 排进 PDF（标题、段落、列表、引用、简单表格） */
 function renderMarkdown(lay: Layout, md: string) {
   let buf: string[] = [];
-  const flush = () => {
+  const flush = (gap = 8) => {
     if (!buf.length) return;
     lay.para(inline(buf.join(" ")));
-    lay.gap(8);
+    lay.gap(gap);
     buf = [];
   };
   for (const raw of md.replace(/\r/g, "").split("\n")) {
@@ -199,7 +199,9 @@ function renderMarkdown(lay: Layout, md: string) {
       lay.para(inline(m[1]), { indent: 18 });
       lay.gap(6);
     } else {
-      buf.push(line.trim());
+      buf.push(line.trim().replace(/\\$/, ""));
+      // 行尾两个空格或反斜杠是 Markdown 的强制换行（信头、地址、落款常用），这一行单独成行
+      if (/( {2,}|\\)$/.test(raw)) flush(2);
     }
   }
   flush();
@@ -319,6 +321,10 @@ export async function buildPacket(opts: PacketOptions) {
     page.drawText(foot, { x: width - 36 - font.widthOfTextAtSize(foot, 9), y: 24, size: 9, font });
   });
 
+  const todo = opts.items.reduce((n, i) => n + (i.text?.match(/\[(待补充|待核实|TODO)/g)?.length ?? 0), 0);
+  if (todo) {
+    warnings.unshift(`文书里还有 ${todo} 处 [待补充] 或 [待核实] 没有填。它们会原样留在 PDF 里（其中的中文会被略去），递交前必须逐个补上`);
+  }
   if (lay.dropped) warnings.push("文书或标题里有无法写入 PDF 的字符（例如中文），已被略去。递交给 USCIS 的材料应为英文");
   out.setTitle(`${opts.caseType} Petition - ${name}`);
   return { bytes: await out.save(), pages: total, warnings };
