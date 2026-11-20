@@ -4,7 +4,7 @@
 
 ## Cover Letter 的内容
 
-- 抬头：日期、USCIS 收件信息写成 [待补充：按 USCIS 官网当前的寄送地址填写]，不要凭记忆写地址。
+- 抬头：日期、USCIS 收件地址不要凭记忆写。后面附的参考资料里有按州列出的地址：知道申请人工作所在的州时可以填上，并在聊天里说明资料的核实日期、提醒递交前到官网复核；不知道时写成 [待补充：按 USCIS 官网当前的寄送地址填写]。
 - RE 行：表格名称（Form I-140）、申请类别（NIW 写 EB-2 with National Interest Waiver；EB-1A 写 EB-1A Alien of Extraordinary Ability）、Petitioner / Beneficiary 姓名。
 - 一段说明：申请人自行提交这份申请，请求的类别是什么。
 - 随信提交的材料清单：表格、申请费、Petition Letter、各项 Exhibit。

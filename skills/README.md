@@ -10,6 +10,11 @@
 
 这些内容是社区整理的一般性资料，不是法律意见，其中引用的政策可能已经过时。
 
+`openniw/` 里的参考资料来自开源项目 [HHHHHejia/openniw](https://github.com/HHHHHejia/openniw)
+（提交 `d77b914`，2026-08-09），按 MIT 许可证使用，许可证全文见 `openniw/LICENSE`。
+只取用了 NIW 和 EB-1A 两个 skill 的 `references/` 说明文件，内容未作修改；没有使用它的脚本和表格填写程序。
+哪个工作流加载哪几份见 `lib/server/skills.ts` 里的 `OPENNIW`。
+
 # 自己写的 Skills
 
-`diy/` 里的是本项目自己写的工作流说明（表格填写指引、Cover Letter 和 Exhibit 清单），由 `lib/server/skills.ts` 直接加载。
+`diy/` 里的是本项目自己写的工作流说明（表格填写指引、Cover Letter 和 Exhibit 清单、EB-1A 申请信的结构），由 `lib/server/skills.ts` 直接加载。

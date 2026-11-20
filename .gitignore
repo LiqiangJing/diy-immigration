@@ -9,3 +9,6 @@ NIW_Liqiang_Jing.pdf
 data/
 *.pem
 IMG_*
+
+# 用户自己的样例文书，不进仓库
+*.docx
