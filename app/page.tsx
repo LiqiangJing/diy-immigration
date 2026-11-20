@@ -9,7 +9,7 @@ import Auth from "@/components/Auth";
 import Contact from "@/components/Contact";
 import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
-import { citationReport, emptyProfile, profileToText } from "@/lib/profile";
+import { citationReport, emptyProfile, normalizeProfile, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
@@ -97,7 +97,7 @@ export default function Home() {
     setConvs(load<Conversation[]>(CONV_KEY, []));
     setCases(load<ImmigrationCase[]>(CASE_KEY, []));
     setDocs(load<DocFile[]>(DOCS_KEY, []));
-    setProfile({ ...emptyProfile(), ...load<Partial<ProfileData>>(PROFILE_KEY, {}) });
+    setProfile(normalizeProfile(load<Record<string, unknown>>(PROFILE_KEY, {})));
     setLoaded(true);
   }, []);
   useEffect(() => {

@@ -2,6 +2,8 @@
  * 学术数据查询。
  *   GET  /api/scholar?gs=链接     → 读取用户填的 Google Scholar 主页
  *   POST /api/scholar {html}      → 解析用户另存的 Google Scholar 网页（服务器被 Google 拦截时用）
+ *   GET  /api/scholar?s2=链接或ID → Semantic Scholar 里该作者的统计数据和论文列表
+ *   GET  /api/scholar?s2q=姓名    → 在 Semantic Scholar 里按姓名找候选作者
  *   GET  /api/scholar?q=姓名      → 在 OpenAlex 里按姓名找候选作者
  *   GET  /api/scholar?id=A123...  → OpenAlex 里该作者的统计数据和论文列表
  * 不配置 OPENALEX_API_KEY 也能用，但每天的免费额度很小。
@@ -10,6 +12,7 @@
 import { getUser } from "@/lib/server/auth";
 import { addCredits, SCHOLAR_COST } from "@/lib/server/credits";
 import { fetchScholar, parseScholarHtml, scholarUserId } from "@/lib/server/scholar";
+import { s2Author, s2AuthorId, s2Search } from "@/lib/server/semanticScholar";
 
 export const runtime = "nodejs";
 
@@ -31,10 +34,12 @@ export async function GET(req: Request) {
   const q = searchParams.get("q")?.trim().slice(0, 100);
   const id = searchParams.get("id")?.trim();
   const gs = searchParams.get("gs")?.trim();
+  const s2 = searchParams.get("s2")?.trim();
+  const s2q = searchParams.get("s2q")?.trim().slice(0, 100);
 
   const user = getUser(req);
   if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
-  if ((id || gs) && user.credits < SCHOLAR_COST) {
+  if ((id || gs || s2) && user.credits < SCHOLAR_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
   }
 
@@ -49,7 +54,29 @@ export async function GET(req: Request) {
       );
     }
     addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
-    return Response.json(result);
+    return Response.json({ ...result, url: `https://scholar.google.com/citations?user=${userId}` });
+  }
+
+  if (s2 || s2q) {
+    try {
+      if (s2q) return Response.json({ candidates: await s2Search(s2q) });
+      const authorId = s2AuthorId(s2!);
+      if (!authorId) {
+        return Response.json({ error: "这不是有效的 Semantic Scholar 作者主页链接。" }, { status: 400 });
+      }
+      const result = await s2Author(authorId);
+      addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
+      return Response.json(result);
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      const msg =
+        code === "404"
+          ? "Semantic Scholar 里没有找到这个作者，请检查链接。"
+          : code === "429"
+            ? "Semantic Scholar 现在访问的人太多，请过一会儿再试。"
+            : "Semantic Scholar 暂时访问不了，请稍后再试。";
+      return Response.json({ error: msg }, { status: 502 });
+    }
   }
 
   try {
@@ -67,6 +94,7 @@ export async function GET(req: Request) {
       addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
       return Response.json({
         source: "OpenAlex",
+        url: `https://openalex.org/${id}`,
         author: {
           id,
           name: author.display_name,

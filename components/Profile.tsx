@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useAccount } from "@/lib/account";
-import { DEGREE_TYPES, REVIEW_OPTIONS } from "@/lib/profile";
-import type { Degree, Profile as ProfileData, Related } from "@/lib/profile";
+import { DEGREE_TYPES, REVIEW_OPTIONS, primaryPatch, primaryRecord } from "@/lib/profile";
+import type { Degree, Profile as ProfileData, Related, ScholarRecord } from "@/lib/profile";
 import { uid } from "@/lib/types";
 
 type Props = {
@@ -118,15 +118,26 @@ type Candidate = {
   hIndex: number | null;
 };
 
+type Src = "gs" | "s2" | "oa";
+
+const SOURCE_NOTE: Record<string, string> = {
+  "Google Scholar": "数字和你的 Google Scholar 主页一致。",
+  "Semantic Scholar":
+    "Semantic Scholar 收录的范围和 Google Scholar 不同，引用数通常偏低；它有时会把同一个人拆成几个作者页，论文不全时请到它的网站上合并。",
+  OpenAlex: "OpenAlex 是按姓名匹配的，和 Google Scholar 的数字通常会有出入。",
+};
+
 export default function Profile({ profile: p, setProfile }: Props) {
-  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [candidates, setCandidates] = useState<{ src: Src; list: Candidate[] } | null>(null);
+  const [loading, setLoading] = useState<Src | "">("");
   const [scholarError, setScholarError] = useState("");
   const [needUpload, setNeedUpload] = useState(false);
   const isGs = /scholar\.google\./.test(p.scholarUrl) && /[?&]user=/.test(p.scholarUrl);
+  const isS2 = /semanticscholar\.org\/author\/.*\d/.test(p.s2Url);
   const fullName = `${p.firstName} ${p.lastName}`.trim();
   const account = useAccount();
   const cost = account.me?.scholarCost ?? 0;
+  const main = primaryRecord(p);
 
   async function call(query: string) {
     const res = await fetch(`/api/scholar?${query}`);
@@ -135,50 +146,62 @@ export default function Profile({ profile: p, setProfile }: Props) {
     return data;
   }
 
-  // 把接口返回的结果存进档案
-  function apply(data: any) {
-    set({
+  // 把接口返回的结果存成这个来源的记录（同一来源重新获取时覆盖旧的）
+  function apply(data: any, fallbackUrl = "") {
+    const rec: ScholarRecord = {
+      source: data.source,
+      url: data.url || fallbackUrl,
+      name: data.author.name ?? "",
       papers: `${data.author.papers ?? ""}${data.author.more ? "+" : ""}`,
       citations: String(data.author.citations ?? ""),
       hIndex: data.author.hIndex == null ? "" : String(data.author.hIndex),
       publications: data.works,
-      scholarSource: {
-        name: data.author.name,
-        fetchedAt: Date.now(),
-        source: data.source,
-        more: Boolean(data.author.more),
-      },
+      fetchedAt: Date.now(),
+      more: Boolean(data.author.more),
+    };
+    setProfile((prev) => {
+      // 还没有主要来源，或者重新获取的就是主要来源时，同步更新上面的三个数字
+      const isMain = !prev.records.some((r) => r.source === prev.primarySource) || prev.primarySource === rec.source;
+      return {
+        ...prev,
+        records: [...prev.records.filter((r) => r.source !== rec.source), rec],
+        ...(isMain ? primaryPatch(rec) : {}),
+        ...(rec.source === "Semantic Scholar" && rec.url ? { s2Url: rec.url } : {}),
+        updatedAt: Date.now(),
+      };
     });
     setCandidates(null);
     setNeedUpload(false);
   }
 
-  // 直接读取填写的 Google Scholar 主页
-  async function fetchGs() {
+  async function run(src: Src, fn: () => Promise<void>) {
     if (!account.guard(cost)) return;
-    setLoading(true);
+    setLoading(src);
     setScholarError("");
-    setCandidates(null);
     try {
-      const res = await fetch(`/api/scholar?gs=${encodeURIComponent(p.scholarUrl)}`);
-      const data = await res.json().catch(() => null);
-      if (data?.blocked) setNeedUpload(true);
-      if (!res.ok || !data) throw new Error(data?.error ?? "获取失败，请稍后再试。");
-      apply(data);
+      await fn();
     } catch (e) {
       setScholarError(e instanceof Error ? e.message : "获取失败");
     } finally {
-      setLoading(false);
+      setLoading("");
       account.refresh();
     }
   }
 
+  // 直接读取填写的 Google Scholar 主页
+  const fetchGs = () =>
+    run("gs", async () => {
+      setCandidates(null);
+      const res = await fetch(`/api/scholar?gs=${encodeURIComponent(p.scholarUrl)}`);
+      const data = await res.json().catch(() => null);
+      if (data?.blocked) setNeedUpload(true);
+      if (!res.ok || !data) throw new Error(data?.error ?? "获取失败，请稍后再试。");
+      apply(data, p.scholarUrl);
+    });
+
   // 解析用户另存的 Scholar 网页
-  async function uploadGs(file: File) {
-    if (!account.guard(cost)) return;
-    setLoading(true);
-    setScholarError("");
-    try {
+  const uploadGs = (file: File) =>
+    run("gs", async () => {
       const res = await fetch("/api/scholar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,42 +209,25 @@ export default function Profile({ profile: p, setProfile }: Props) {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data) throw new Error(data?.error ?? "解析失败。");
-      apply(data);
-    } catch (e) {
-      setScholarError(e instanceof Error ? e.message : "解析失败");
-    } finally {
-      setLoading(false);
-      account.refresh();
-    }
-  }
+      apply(data, p.scholarUrl);
+    });
 
-  async function searchAuthor() {
-    if (!account.guard(cost)) return;
-    setLoading(true);
-    setScholarError("");
-    setCandidates(null);
-    try {
-      const data = await call(`q=${encodeURIComponent(fullName)}`);
-      setCandidates(data.candidates);
-    } catch (e) {
-      setScholarError(e instanceof Error ? e.message : "获取失败");
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Semantic Scholar：填了主页链接就直接读，没填就按姓名找候选
+  const fetchS2 = () =>
+    run("s2", async () => {
+      if (isS2) apply(await call(`s2=${encodeURIComponent(p.s2Url)}`));
+      else setCandidates({ src: "s2", list: (await call(`s2q=${encodeURIComponent(fullName)}`)).candidates });
+    });
 
-  async function pickAuthor(c: Candidate) {
-    setLoading(true);
-    setScholarError("");
-    try {
-      apply(await call(`id=${c.id}`));
-    } catch (e) {
-      setScholarError(e instanceof Error ? e.message : "获取失败");
-    } finally {
-      setLoading(false);
-      account.refresh();
-    }
-  }
+  const searchOa = () =>
+    run("oa", async () => {
+      setCandidates({ src: "oa", list: (await call(`q=${encodeURIComponent(fullName)}`)).candidates });
+    });
+
+  const pickAuthor = (c: Candidate) =>
+    run(candidates?.src ?? "oa", async () => {
+      apply(await call(candidates?.src === "s2" ? `s2=${c.id}` : `id=${c.id}`));
+    });
 
   const set = (patch: Partial<ProfileData>) =>
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
@@ -292,32 +298,48 @@ export default function Profile({ profile: p, setProfile }: Props) {
 
       <section className="card">
         <h3>学术记录</h3>
-        <label>
-          学术主页链接（Google Scholar、Semantic Scholar、ResearchGate 等均可）
-          <small>请确认主页是公开的，并且里面的文章都确实是你的。</small>
-          <input
-            type="url"
-            value={p.scholarUrl}
-            onChange={(e) => set({ scholarUrl: e.target.value })}
-            placeholder="https://scholar.google.com/... 或 https://www.semanticscholar.org/author/..."
-          />
-        </label>
-        <div className="scholar-fetch">
-          <button className="btn-accent" disabled={loading || (!isGs && !fullName)} onClick={isGs ? fetchGs : searchAuthor}>
-            {loading ? "正在获取…" : "一键获取论文和引用数据"}
+        <small>
+          可以从多个来源获取，每个来源各保留一份记录{cost ? `，每次获取 ${cost} 个 credit` : ""}
+          。请确认主页是公开的，并且里面的文章都确实是你的。
+        </small>
+        <div className="src-row">
+          <label>
+            Google Scholar 主页链接
+            <input
+              type="url"
+              value={p.scholarUrl}
+              onChange={(e) => set({ scholarUrl: e.target.value })}
+              placeholder="https://scholar.google.com/citations?user=..."
+            />
+          </label>
+          <button className="btn-accent" disabled={Boolean(loading) || !isGs} onClick={fetchGs}>
+            {loading === "gs" ? "正在获取…" : "获取"}
           </button>
-          <small>
-            {isGs
-              ? `直接读取上面填写的 Google Scholar 主页，数字和主页上一致${cost ? `，每次 ${cost} 个 credit` : ""}。`
-              : fullName
-              ? `按英文姓名「${fullName}」在 OpenAlex 学术数据库里查找，选中你本人后自动填入下面的数字和论文列表${cost ? `，每次 ${cost} 个 credit` : ""}。`
-              : "请先在上面填写英文姓名。"}
-          </small>
+        </div>
+        <div className="src-row">
+          <label>
+            Semantic Scholar 主页链接
+            <input
+              type="url"
+              value={p.s2Url}
+              onChange={(e) => set({ s2Url: e.target.value })}
+              placeholder="https://www.semanticscholar.org/author/...（不填则按英文姓名查找）"
+            />
+          </label>
+          <button className="btn-accent" disabled={Boolean(loading) || (!isS2 && !fullName)} onClick={fetchS2}>
+            {loading === "s2" ? "正在获取…" : isS2 ? "获取" : "按姓名查找"}
+          </button>
+        </div>
+        <div>
+          <button className="link" disabled={Boolean(loading) || !fullName} onClick={searchOa}>
+            {loading === "oa" ? "正在查找…" : "两个主页都没有？按英文姓名在 OpenAlex 学术数据库里查找"}
+          </button>
+          {!fullName && <small> 按姓名查找前请先在上面填写英文姓名。</small>}
         </div>
         {scholarError && <div className="notice">{scholarError}</div>}
         {needUpload && (
           <div className="gs-upload">
-            <strong>换一种方式：上传你自己保存的主页</strong>
+            <strong>换一种方式：上传你自己保存的 Google Scholar 主页</strong>
             <ol>
               <li>在浏览器里打开你的 Google Scholar 主页，点页面底部的 SHOW MORE，直到所有论文都显示出来。</li>
               <li>按 Cmd + S（Windows 是 Ctrl + S），格式选「网页，仅 HTML」，保存。</li>
@@ -326,29 +348,26 @@ export default function Profile({ profile: p, setProfile }: Props) {
             <input
               type="file"
               accept=".html,.htm,text/html"
-              disabled={loading}
+              disabled={Boolean(loading)}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) uploadGs(f);
                 e.target.value = "";
               }}
             />
-            {fullName && (
-              <button className="link" onClick={searchAuthor} disabled={loading}>
-                或者改用 OpenAlex 按姓名查（数字可能和 Scholar 不一致）
-              </button>
-            )}
           </div>
         )}
         {candidates && (
           <div className="candidates">
-            {candidates.length === 0 ? (
+            {candidates.list.length === 0 ? (
               <small>没有找到同名作者。可以检查姓名拼写，或者手动填写下面的数字。</small>
             ) : (
               <>
-                <small>找到以下作者，请选择你本人：</small>
-                {candidates.map((c) => (
-                  <button key={c.id} onClick={() => pickAuthor(c)} disabled={loading}>
+                <small>
+                  在 {candidates.src === "s2" ? "Semantic Scholar" : "OpenAlex"} 里找到以下作者，请选择你本人：
+                </small>
+                {candidates.list.map((c) => (
+                  <button key={c.id} onClick={() => pickAuthor(c)} disabled={Boolean(loading)}>
                     <strong>{c.name}</strong>
                     <span>
                       {c.institution || "机构未知"} · {c.papers} 篇论文 · 被引 {c.citations} 次
@@ -362,46 +381,67 @@ export default function Profile({ profile: p, setProfile }: Props) {
         <div className="grid2">
           <label>
             论文数
-            <input value={p.papers} onChange={(e) => set({ papers: e.target.value })} inputMode="numeric" />
+            <input value={p.papers} onChange={(e) => set({ papers: e.target.value, primarySource: "" })} inputMode="numeric" />
           </label>
           <label>
             总引用数
-            <input value={p.citations} onChange={(e) => set({ citations: e.target.value })} inputMode="numeric" />
+            <input value={p.citations} onChange={(e) => set({ citations: e.target.value, primarySource: "" })} inputMode="numeric" />
           </label>
           <label>
             h-index
-            <input value={p.hIndex} onChange={(e) => set({ hIndex: e.target.value })} inputMode="numeric" />
+            <input value={p.hIndex} onChange={(e) => set({ hIndex: e.target.value, primarySource: "" })} inputMode="numeric" />
           </label>
         </div>
-        {p.publications.length > 0 && (
-          <details className="pubs">
+        <small>
+          这三个是 AI 写文书时默认使用的数字
+          {p.primarySource ? `，目前取自 ${p.primarySource}` : p.records.length ? "，目前是你手动填写的" : ""}
+          。可以直接改，也可以在下面某个来源里点「用这组数字」。
+        </small>
+        {p.records.map((r) => (
+          <details className="pubs" key={r.source}>
             <summary>
-              已获取 {p.publications.length} 篇论文
-              {p.scholarSource &&
-                `（${p.scholarSource.name}，${new Date(p.scholarSource.fetchedAt).toLocaleDateString("zh-CN")} 获取）`}
+              {r.source}：{r.papers || "?"} 篇论文 · 被引 {r.citations || "?"} · h-index {r.hIndex || "?"}
+              {p.primarySource === r.source && "（主要）"}
+              <span>
+                {" "}
+                {r.name && `${r.name}，`}
+                {new Date(r.fetchedAt).toLocaleDateString("zh-CN")} 获取
+              </span>
             </summary>
             <small>
-              {p.scholarSource?.source === "Google Scholar"
-                ? `数据来自你的 Google Scholar 主页${p.scholarSource.more ? "，主页上还有更多论文没有列出（只读取了引用最多的前 100 篇）" : ""}。`
-                : "数据来自 OpenAlex，和 Google Scholar 的数字通常会有出入，写进文书前请以你实际要引用的来源为准。"}
-              在案件里新建「论文与引用记录」文档可以把这份列表变成一份 Exhibit。作为证据递交时，建议同时把 Scholar
-              主页打印成 PDF（Cmd + P → 存储为 PDF）上传到案件的「文件」里，那是审查官认可的原始页面。
+              {SOURCE_NOTE[r.source]}
+              {r.more && "主页上还有更多论文没有列出（只读取了引用最多的前 100 篇）。"}
+              {r === main &&
+                "在案件里新建「论文与引用记录」文档会用这份列表生成一份 Exhibit。作为证据递交时，建议同时把来源主页打印成 PDF（Cmd + P → 存储为 PDF）上传到案件的「文件」里，那是审查官认可的原始页面。"}
             </small>
             <ol>
-              {p.publications.map((w, i) => (
+              {r.publications.map((w, i) => (
                 <li key={i}>
                   {w.title}
-                  <span>
-                    {[w.venue, w.year, `被引 ${w.citations}`].filter(Boolean).join(" · ")}
-                  </span>
+                  <span>{[w.venue, w.year, `被引 ${w.citations}`].filter(Boolean).join(" · ")}</span>
                 </li>
               ))}
             </ol>
-            <button className="link-danger" onClick={() => set({ publications: [], scholarSource: null })}>
-              清除论文列表
-            </button>
+            <div className="rec-actions">
+              {p.primarySource !== r.source && (
+                <button className="link" onClick={() => set(primaryPatch(r))}>
+                  用这组数字
+                </button>
+              )}
+              <button
+                className="link-danger"
+                onClick={() =>
+                  set({
+                    records: p.records.filter((x) => x.source !== r.source),
+                    ...(p.primarySource === r.source ? { primarySource: "" } : {}),
+                  })
+                }
+              >
+                删除这份记录
+              </button>
+            </div>
           </details>
-        )}
+        ))}
         <div className="field">
           <span>
             审稿次数
