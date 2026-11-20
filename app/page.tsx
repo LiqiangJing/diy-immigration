@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import Chat from "@/components/Chat";
 import Cases, { caseLibrary, caseLine } from "@/components/Cases";
 import Profile from "@/components/Profile";
+import Account from "@/components/Account";
+import Auth from "@/components/Auth";
+import { AccountContext } from "@/lib/account";
+import type { Me } from "@/lib/account";
 import { citationReport, emptyProfile, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
@@ -28,7 +32,7 @@ function save(key: string, value: unknown) {
   } catch {}
 }
 
-type View = "chat" | "cases" | "profile";
+type View = "chat" | "cases" | "profile" | "account";
 
 export default function Home() {
   const [view, setView] = useState<View>("chat");
@@ -38,6 +42,44 @@ export default function Home() {
   const [profile, setProfile] = useState<ProfileData>(emptyProfile);
   const [docs, setDocs] = useState<DocFile[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/me", { cache: "no-store" });
+      if (res.ok) setMe(await res.json());
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    // 从 Stripe 支付页面跳回来
+    const paid = new URLSearchParams(window.location.search).get("paid");
+    if (paid) {
+      window.history.replaceState(null, "", window.location.pathname);
+      setView("account");
+      setToast(paid === "1" ? "支付成功，credit 到账可能需要几秒钟。" : "支付已取消。");
+      if (paid === "1") setTimeout(refresh, 4000);
+    }
+  }, [refresh]);
+
+  const guard = useCallback(
+    (cost = 1) => {
+      if (!me?.user) {
+        setAuthOpen(true);
+        return false;
+      }
+      if (me.user.credits < cost) {
+        setToast("Credit 余额不足，请先充值。");
+        setView("account");
+        return false;
+      }
+      return true;
+    },
+    [me],
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // 只有用户主动切换会话时才重新挂载 Chat；发送首条消息创建会话时不能重挂载，否则会打断流式输出
   const [chatKey, setChatKey] = useState(0);
@@ -93,6 +135,7 @@ export default function Home() {
   };
 
   return (
+    <AccountContext.Provider value={{ me, guard, refresh }}>
     <div className="app">
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand">
@@ -152,6 +195,20 @@ export default function Home() {
             </div>
           </>
         )}
+
+        <div className="account-box">
+          {me?.user ? (
+            <button className={view === "account" ? "on" : ""} onClick={() => go("account")}>
+              <span className="account-email">{me.user.email}</span>
+              <span className="account-credits">{me.user.credits} credits · 充值</span>
+            </button>
+          ) : (
+            <button onClick={() => setAuthOpen(true)}>
+              <span className="account-email">登录 / 注册</span>
+              <span className="account-credits">登录后开始使用</span>
+            </button>
+          )}
+        </div>
       </aside>
 
       {sidebarOpen && <div className="scrim" onClick={() => setSidebarOpen(false)} />}
@@ -189,10 +246,33 @@ export default function Home() {
             petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
             citationReport={citationReport(profile)}
           />
-        ) : (
+        ) : view === "profile" ? (
           <Profile profile={profile} setProfile={setProfile} />
+        ) : (
+          <>
+            {toast && <div className="toast">{toast}</div>}
+            <Account
+              onLogin={() => setAuthOpen(true)}
+              onLogout={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                setToast("");
+                refresh();
+              }}
+            />
+          </>
         )}
       </main>
+
+      {authOpen && (
+        <Auth
+          onClose={() => setAuthOpen(false)}
+          onDone={() => {
+            setAuthOpen(false);
+            refresh();
+          }}
+        />
+      )}
     </div>
+    </AccountContext.Provider>
   );
 }

@@ -12,6 +12,8 @@ export function streamViaClaudeCli(opts: {
   system: string;
   content: unknown[]; // 一条 user 消息的 content blocks
   signal: AbortSignal;
+  /** 结束时回调一次；拿不到用量时参数为 null */
+  onDone?: (usage: Record<string, number> | null) => void;
 }): ReadableStream<Uint8Array> {
   const cwd = join(tmpdir(), "pathway-claude-cli");
   mkdirSync(cwd, { recursive: true });
@@ -50,6 +52,7 @@ export function streamViaClaudeCli(opts: {
       let closed = false;
       let gotText = false;
       let reported = false;
+      let usage: Record<string, number> | null = null;
       let buf = "";
       let stderr = "";
       const send = (s: string) => {
@@ -59,6 +62,7 @@ export function streamViaClaudeCli(opts: {
         if (closed) return;
         closed = true;
         opts.signal.removeEventListener("abort", kill);
+        opts.onDone?.(usage);
         try {
           controller.close();
         } catch {}
@@ -84,6 +88,8 @@ export function streamViaClaudeCli(opts: {
         ) {
           gotText = true;
           send(ev.event.delta.text);
+        } else if (ev.type === "result" && ev.usage && !ev.is_error) {
+          usage = ev.usage;
         } else if (ev.type === "result" && ev.is_error) {
           fail(`Claude 订阅通道出错：${String(ev.result ?? ev.subtype ?? "未知错误").slice(0, 300)}`);
         }

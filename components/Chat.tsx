@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { uid } from "@/lib/types";
 import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/types";
 import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
+import { useAccount } from "@/lib/account";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
 
 /** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
@@ -65,6 +66,7 @@ export default function Chat({
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
   const [picking, setPicking] = useState(false);
+  const account = useAccount();
   const fileInput = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
@@ -98,6 +100,7 @@ export default function Chat({
   async function send(text: string) {
     text = text.trim();
     if (busy || (!text && pending.length === 0)) return;
+    if (!account.guard()) return;
 
     const userMsg: ChatMessage = {
       id: uid(),
@@ -218,6 +221,7 @@ export default function Chat({
       setBot((body + suffix).trim());
       setBusy(false);
       abort.current = null;
+      account.refresh(); // 更新余额
     }
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAccount } from "@/lib/account";
 import { DEGREE_TYPES, REVIEW_OPTIONS } from "@/lib/profile";
 import type { Degree, Profile as ProfileData, Related } from "@/lib/profile";
 import { uid } from "@/lib/types";
@@ -122,6 +123,8 @@ export default function Profile({ profile: p, setProfile }: Props) {
   const [loading, setLoading] = useState(false);
   const [scholarError, setScholarError] = useState("");
   const fullName = `${p.firstName} ${p.lastName}`.trim();
+  const account = useAccount();
+  const cost = account.me?.scholarCost ?? 0;
 
   async function call(query: string) {
     const res = await fetch(`/api/scholar?${query}`);
@@ -131,6 +134,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
   }
 
   async function searchAuthor() {
+    if (!account.guard(cost)) return;
     setLoading(true);
     setScholarError("");
     setCandidates(null);
@@ -161,6 +165,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
       setScholarError(e instanceof Error ? e.message : "获取失败");
     } finally {
       setLoading(false);
+      account.refresh();
     }
   }
 
@@ -249,7 +254,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
           </button>
           <small>
             {fullName
-              ? `按英文姓名「${fullName}」在 OpenAlex 学术数据库里查找，选中你本人后自动填入下面的数字和论文列表。`
+              ? `按英文姓名「${fullName}」在 OpenAlex 学术数据库里查找，选中你本人后自动填入下面的数字和论文列表${cost ? `，每次 ${cost} 个 credit` : ""}。`
               : "请先在上面填写英文姓名。"}
           </small>
         </div>

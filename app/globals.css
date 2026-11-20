@@ -262,6 +262,31 @@ button:disabled { cursor: not-allowed; }
 .pubs li { margin-bottom: 6px; }
 .pubs li span { display: block; color: var(--muted); font-size: 12.5px; }
 
+/* ---------- 账户 ---------- */
+.sidebar .history { flex: 1; }
+.account-box { margin-top: auto; border-top: 1px solid var(--line); padding-top: 10px; }
+.account-box button { width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px; display: flex; flex-direction: column; }
+.account-box button:hover, .account-box button.on { background: var(--card); }
+.account-email { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-credits { font-size: 12px; color: var(--accent); }
+.modal-scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .35); display: grid; place-items: center; padding: 16px; }
+.modal { width: 100%; max-width: 400px; background: var(--card); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
+.modal h3 { margin: 0; font-size: 18px; }
+.modal p { margin: 0; color: var(--muted); font-size: 14px; }
+.modal label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.modal input { font: inherit; font-size: 16px; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+.link { color: var(--accent); padding: 0 0 0 6px; }
+.link:hover { text-decoration: underline; }
+.dev-code { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.balance { gap: 2px; }
+.balance > span { color: var(--muted); font-size: 13px; }
+.balance > strong { font-size: 34px; font-family: var(--serif); line-height: 1.2; }
+.balance > small { color: var(--muted); font-size: 13px; }
+.case-card:disabled { opacity: .55; cursor: not-allowed; }
+.file-list .plus { color: var(--accent); }
+.file-list .minus { color: var(--muted); }
+.toast { margin: 16px 24px 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 14px; }
+
 /* ---------- 窄屏 ---------- */
 @media (max-width: 760px) {
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 10; transform: translateX(-100%); transition: transform .2s; }

@@ -5,6 +5,9 @@
  * 不配置 OPENALEX_API_KEY 也能用，但每天的免费额度很小。
  */
 
+import { getUser } from "@/lib/server/auth";
+import { addCredits, SCHOLAR_COST } from "@/lib/server/credits";
+
 export const runtime = "nodejs";
 
 const BASE = "https://api.openalex.org";
@@ -25,6 +28,12 @@ export async function GET(req: Request) {
   const q = searchParams.get("q")?.trim().slice(0, 100);
   const id = searchParams.get("id")?.trim();
 
+  const user = getUser(req);
+  if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
+  if (id && user.credits < SCHOLAR_COST) {
+    return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
+  }
+
   try {
     if (id) {
       if (!/^A\d+$/.test(id)) return Response.json({ error: "作者 ID 格式不对" }, { status: 400 });
@@ -37,6 +46,7 @@ export async function GET(req: Request) {
           select: "id,title,publication_year,cited_by_count,primary_location,type",
         }),
       ]);
+      addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
       return Response.json({
         author: {
           id,

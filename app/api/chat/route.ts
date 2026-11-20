@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiMessage } from "@/lib/types";
 import { streamViaClaudeCli } from "@/lib/claudeCli";
+import { getUser } from "@/lib/server/auth";
+import { addCredits, chatCost } from "@/lib/server/credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -63,6 +65,18 @@ function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
 }
 
 export async function POST(req: Request) {
+  const user = getUser(req);
+  if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
+  if (user.credits <= 0) {
+    return Response.json({ error: "Credit 余额不足，请先充值。" }, { status: 402 });
+  }
+  let charged = false;
+  const charge = (usage: Parameters<typeof chatCost>[0]) => {
+    if (charged) return;
+    charged = true;
+    addCredits(user.id, -chatCost(usage), "聊天");
+  };
+
   let body: {
     messages?: ApiMessage[];
     profile?: string;
@@ -111,7 +125,7 @@ export async function POST(req: Request) {
       content.push({ type: "text", text: last ? "【当前消息 · 用户】" : `【此前对话 · ${who}】` });
       content.push(...(m.content as Anthropic.Beta.BetaContentBlockParam[]));
     });
-    return new Response(streamViaClaudeCli({ system, content, signal: req.signal }), {
+    return new Response(streamViaClaudeCli({ system, content, signal: req.signal, onDone: charge }), {
       headers,
     });
   }
@@ -140,6 +154,7 @@ export async function POST(req: Request) {
       try {
         stream.on("text", (delta) => send(delta));
         const final = await stream.finalMessage();
+        charge(final.usage);
         if (final.stop_reason === "refusal") {
           send("\n\n> 这个请求被模型拒绝了，请换一种问法。");
         } else if (final.stop_reason === "max_tokens") {
@@ -155,6 +170,7 @@ export async function POST(req: Request) {
         console.error("[api/chat]", err);
         send(`\n\n> ⚠️ ${msg}`);
       } finally {
+        charge(null); // 出错或中途停止时拿不到用量，按最低数额扣
         try {
           controller.close();
         } catch {}
