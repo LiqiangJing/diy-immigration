@@ -278,6 +278,7 @@ button:disabled { cursor: not-allowed; }
 .link { color: var(--accent); padding: 0 0 0 6px; }
 .link:hover { text-decoration: underline; }
 .dev-code { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.pay-methods { display: inline-flex; margin-bottom: 12px; }
 .balance { gap: 2px; }
 .balance > span { color: var(--muted); font-size: 13px; }
 .balance > strong { font-size: 34px; font-family: var(--serif); line-height: 1.2; }

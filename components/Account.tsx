@@ -8,6 +8,7 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
   const { me } = useAccount();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [method, setMethod] = useState<"alipay" | "stripe" | null>(null);
 
   if (!me?.user) {
     return (
@@ -23,11 +24,17 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
     );
   }
 
+  const methods = [
+    ...(me.alipayEnabled ? [{ id: "alipay" as const, label: "支付宝" }] : []),
+    ...(me.stripeEnabled ? [{ id: "stripe" as const, label: "信用卡" }] : []),
+  ];
+  const active = methods.find((m) => m.id === method)?.id ?? methods[0]?.id ?? null;
+
   async function buy(pack: string) {
     setBusy(pack);
     setError("");
     try {
-      const res = await fetch("/api/billing/checkout", {
+      const res = await fetch(active === "alipay" ? "/api/billing/alipay/checkout" : "/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pack }),
@@ -63,19 +70,31 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
       </section>
 
       <h3 className="section-title">充值</h3>
+      {methods.length > 1 && (
+        <div className="seg small pay-methods">
+          {methods.map((m) => (
+            <button key={m.id} className={active === m.id ? "on" : ""} onClick={() => setMethod(m.id)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {active === "alipay" && me.alipaySandbox && (
+        <div className="notice">当前是支付宝沙箱（测试）环境，请用沙箱买家账号付款，不会产生真实扣款。</div>
+      )}
       <div className="case-list">
         {me.packs.map((p) => (
-          <button key={p.id} className="case-card" disabled={!me.paymentsEnabled || busy !== ""} onClick={() => buy(p.id)}>
+          <button key={p.id} className="case-card" disabled={!active || busy !== ""} onClick={() => buy(p.id)}>
             <strong>{p.credits} credits</strong>
             <span className="case-meta">
-              ${p.usd}
+              {active === "alipay" ? `¥${p.cny}` : `$${p.usd}`}
               {p.credits > p.usd * 100 && ` · 多送 ${p.credits - p.usd * 100}`}
             </span>
-            <span className="tag">{busy === p.id ? "正在跳转…" : "信用卡 / 支付宝"}</span>
+            <span className="tag">{busy === p.id ? "正在跳转…" : active === "alipay" ? "支付宝" : active === "stripe" ? "信用卡" : "未开通"}</span>
           </button>
         ))}
       </div>
-      {!me.paymentsEnabled && <div className="notice">充值功能还没有开通。</div>}
+      {!active && <div className="notice">充值功能还没有开通。</div>}
       {error && <div className="notice">{error}</div>}
 
       <h3 className="section-title">最近的 credit 记录</h3>

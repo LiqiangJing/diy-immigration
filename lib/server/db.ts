@@ -42,6 +42,16 @@ export function db(): Database.Database {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id, id DESC);
+    -- 支付宝订单
+    CREATE TABLE IF NOT EXISTS orders (
+      order_no   TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pack       TEXT NOT NULL,
+      amount     TEXT NOT NULL,
+      status     TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      paid_at    INTEGER
+    );
   `);
   g.__diyDb = d;
   return d;

@@ -9,11 +9,11 @@ export const SIGNUP_BONUS = 100; // 新用户赠送
 export const SCHOLAR_COST = 5; // 一键获取学术数据
 const MARKUP = Number(process.env.CREDIT_MARKUP) || 2; // 成本之上的加价倍数
 
-/** 充值档位：付多少美元，得多少 credit */
+/** 充值档位：付多少美元（Stripe）或人民币（支付宝），得多少 credit */
 export const PACKS = [
-  { id: "p5", usd: 5, credits: 500 },
-  { id: "p20", usd: 20, credits: 2200 },
-  { id: "p50", usd: 50, credits: 6000 },
+  { id: "p5", usd: 5, cny: 36, credits: 500 },
+  { id: "p20", usd: 20, cny: 145, credits: 2200 },
+  { id: "p50", usd: 50, cny: 360, credits: 6000 },
 ] as const;
 
 export type Usage = {
