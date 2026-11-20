@@ -11,7 +11,8 @@ import { CHECKLISTS, totalItems } from "@/lib/checklists";
 import { claimsLine } from "@/lib/claims";
 import { workflowsFor } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
-import { ACCEPT, dropFile, fmtSize, saveUploads } from "@/lib/files";
+import { ACCEPT, dropFile, fmtSize, replaceUpload, saveUploads } from "@/lib/files";
+import { isPaperFile } from "@/components/PaperFetch";
 import { uid } from "@/lib/types";
 import type { CaseType, DocFile, ImmigrationCase } from "@/lib/types";
 
@@ -259,8 +260,28 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pro
               <ul className="file-list">
                 {files.map((f) => (
                   <li key={f.id}>
-                    <span className="file-name">{f.name}</span>
+                    <span className="file-name">
+                      {f.name}
+                      {f.name.includes("[arXiv preprint]") && <span className="tag preprint">预印本，建议换成正式发表版本</span>}
+                    </span>
                     <span className="case-meta">{fmtSize(f.size)}</span>
+                    <label className="link replace">
+                      替换
+                      <input
+                        type="file"
+                        hidden
+                        accept={ACCEPT}
+                        onChange={async (e) => {
+                          const nf = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!nf) return;
+                          // 一键下载的论文保留原来的名字（去掉预印本标记），其他文件用新文件的名字
+                          const { att, problem } = await replaceUpload(f, nf, isPaperFile(f));
+                          setNotice(problem ?? "");
+                          if (att) patchCase(open.id, (c) => ({ ...c, files: (c.files ?? []).map((x) => (x.id === f.id ? att : x)) }));
+                        }}
+                      />
+                    </label>
                     <button
                       className="link-danger"
                       onClick={() => {

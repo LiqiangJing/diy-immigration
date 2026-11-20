@@ -1,6 +1,7 @@
 /**
  * 下载一篇论文的公开全文 PDF。
  *   POST /api/paper {title, url?} → {name, data(base64), size, source}
+ * 优先正式发表的版本，没有公开的正式版时给 arXiv 预印本（version = "preprint"）。
  * 只能拿到开放获取的版本；拿不到时返回 404，由用户自己下载后上传。不扣 credit。
  */
 
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
     return Response.json({
       title: r.title,
       source: r.source,
+      version: r.version,
+      venue: r.venue,
       size: r.bytes.length,
       data: Buffer.from(r.bytes).toString("base64"),
     });

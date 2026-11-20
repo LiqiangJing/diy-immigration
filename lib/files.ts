@@ -111,5 +111,22 @@ export async function saveUploads(files: FileList | File[]) {
   return { added, problems };
 }
 
+/**
+ * 用新上传的文件替换一个已有的文件。沿用原来的 id，所以它在打包顺序里的位置、标题等设置都不变。
+ * keepName 为 true 时保留原来的文件名（去掉预印本标记），否则用新文件的名字。
+ */
+export async function replaceUpload(old: Attachment, f: File, keepName: boolean): Promise<{ att?: Attachment; problem?: string }> {
+  const type = mimeOf(f);
+  if (!type) return { problem: `「${f.name}」格式暂不支持（目前支持 PDF、图片、TXT、Markdown）` };
+  if (f.size > MAX_FILE) return { problem: `「${f.name}」超过 20 MB` };
+  try {
+    await putFile(old.id, await toBase64(f));
+    const name = keepName ? old.name.replace(" [arXiv preprint]", "") : f.name;
+    return { att: { id: old.id, name, type, size: f.size } };
+  } catch {
+    return { problem: `「${f.name}」读取失败` };
+  }
+}
+
 export const fmtSize = (n: number) =>
   n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;

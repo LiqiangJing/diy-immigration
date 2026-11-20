@@ -295,6 +295,8 @@ button:disabled { cursor: not-allowed; }
 .paper-fetch-head small { display: block; color: var(--muted); font-size: 13px; }
 .paper-fetch-list { margin-top: 8px; max-height: 420px; overflow-y: auto; }
 .paper-fetch-list > small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+.link.replace { cursor: pointer; white-space: nowrap; }
+.tag.preprint { margin-left: 8px; background: #fff4d6; color: #8a6100; font-weight: 500; }
 .candidates { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .candidates button { text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--bg); display: flex; flex-direction: column; }
 .candidates button:hover { border-color: var(--accent); }

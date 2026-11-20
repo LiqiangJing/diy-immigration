@@ -1,6 +1,7 @@
 /**
  * 找一篇论文的公开全文 PDF 并下载下来。
- * 只取开放获取（open access）的版本：Semantic Scholar 登记的开放 PDF、arXiv、ACL Anthology。
+ * 只取开放获取（open access）的版本。优先正式发表的版本（ACL Anthology、出版方或会议网站上的开放 PDF），
+ * 没有时才用 arXiv 预印本，并告诉调用方这是预印本、这篇论文有没有正式发表。
  * 需要订阅才能看的论文拿不到，由用户自己下载后上传。
  */
 
@@ -79,7 +80,13 @@ async function download(raw: string): Promise<Uint8Array | null> {
   return null;
 }
 
-export type PaperPdf = { title: string; bytes: Uint8Array; source: string };
+export type PaperPdf = {
+  title: string;
+  bytes: Uint8Array;
+  source: string;
+  version: "published" | "preprint";
+  venue: string; // 正式发表的刊物或会议；只有预印本时为空
+};
 
 /**
  * @param title 论文标题
@@ -87,8 +94,8 @@ export type PaperPdf = { title: string; bytes: Uint8Array; source: string };
  * @returns 找到并下载成功时返回 PDF；"closed" 表示找到了论文但没有公开的 PDF；null 表示没找到论文
  */
 export async function fetchPaperPdf(title: string, hint?: string): Promise<PaperPdf | "closed" | null> {
-  const fields = "title,externalIds,openAccessPdf";
-  let paper: { title?: string; externalIds?: Record<string, string>; openAccessPdf?: { url?: string } } | undefined;
+  const fields = "title,venue,externalIds,openAccessPdf";
+  let paper: { title?: string; venue?: string; externalIds?: Record<string, string>; openAccessPdf?: { url?: string } } | undefined;
   const doi = hint?.match(/doi\.org\/(10\.[^\s?#]+)/i)?.[1];
   const arxiv = hint?.match(/arxiv\.org\/(?:abs|pdf)\/([\w.\/-]+?)(?:\.pdf)?$/i)?.[1];
   try {
@@ -111,16 +118,22 @@ export async function fetchPaperPdf(title: string, hint?: string): Promise<Paper
   if (!paper && !arxiv) return null;
 
   const ids = paper?.externalIds ?? {};
-  const candidates: [string, string][] = [];
+  const isArxiv = (u: string) => /(^|\/\/|\.)arxiv\.org\//i.test(u);
+  const oa = paper?.openAccessPdf?.url;
   const ax = ids.ArXiv ?? arxiv;
-  if (ax) candidates.push([`https://arxiv.org/pdf/${ax}`, "arXiv"]);
-  if (ids.ACL) candidates.push([`https://aclanthology.org/${ids.ACL}.pdf`, "ACL Anthology"]);
-  if (paper?.openAccessPdf?.url) candidates.push([paper.openAccessPdf.url, "开放获取版本"]);
+  // 这篇论文有没有正式发表：有 arXiv 以外的刊物名
+  const venue = paper?.venue && !/^arxiv/i.test(paper.venue) ? paper.venue : "";
+  // 先正式发表的版本，最后才是 arXiv 预印本
+  const candidates: [string, string, PaperPdf["version"]][] = [];
+  if (ids.ACL) candidates.push([`https://aclanthology.org/${ids.ACL}.pdf`, "ACL Anthology", "published"]);
+  if (oa && !isArxiv(oa)) candidates.push([oa, "出版方的开放获取版本", "published"]);
+  if (ax) candidates.push([`https://arxiv.org/pdf/${ax}`, "arXiv", "preprint"]);
+  else if (oa && isArxiv(oa)) candidates.push([oa, "arXiv", "preprint"]);
 
-  for (const [url, source] of candidates) {
+  for (const [url, source, version] of candidates) {
     try {
       const bytes = await download(url);
-      if (bytes) return { title: paper?.title ?? title, bytes, source };
+      if (bytes) return { title: paper?.title ?? title, bytes, source, version, venue };
     } catch {
       // 换下一个地址
     }

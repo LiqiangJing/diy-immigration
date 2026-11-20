@@ -55,7 +55,11 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
       (f): Row => ({
         id: f.id,
         source: "文件",
-        defaultTitle: f.name.replace(/\.[^.]+$/, ""),
+        // 一键下载的论文：目录里只显示论文标题，不带「Paper - 」前缀和预印本标记
+        defaultTitle: f.name
+          .replace(/\.[^.]+$/, "")
+          .replace(" [arXiv preprint]", "")
+          .replace(/^(Paper|Citing) - /, ""),
         defaultRole: "exhibit",
         format:
           f.type === "application/pdf" ? "pdf"
