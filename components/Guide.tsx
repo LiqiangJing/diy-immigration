@@ -1,5 +1,7 @@
 "use client";
 
+import { claimsReady, EB1A_CRITERIA, EXCEPTIONAL_CRITERIA, MIN_CLAIMS } from "@/lib/claims";
+import type { Claim } from "@/lib/claims";
 import { isSelected } from "@/lib/profile";
 import type { Profile } from "@/lib/profile";
 import { workflowById } from "@/lib/skills";
@@ -26,6 +28,7 @@ type Step = {
   optional?: boolean;
   done: boolean; // 根据案件里已有的内容自动判断
   have?: string; // 已有内容的简述
+  body?: React.ReactNode; // 直接在这一步里操作的内容
   actions: Action[];
 };
 
@@ -63,6 +66,54 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
   const cover = bySkill("cover-letter");
   const audit = bySkill("petition-audit");
 
+  const claims = c.claims ?? [];
+  const toggle = (id: string) =>
+    patchCase((x) => {
+      const cur = x.claims ?? [];
+      return { ...x, claims: cur.includes(id) ? cur.filter((y) => y !== id) : [...cur, id] };
+    });
+  const boxes = (list: Claim[]) => (
+    <div className="claims">
+      {list.map((k) => (
+        <label key={k.id} className="item">
+          <input type="checkbox" checked={claims.includes(k.id)} onChange={() => toggle(k.id)} />
+          <span>
+            {k.label}
+            <small>
+              {k.hint ? `${k.hint}　` : ""}
+              {k.en}
+            </small>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+  const claimsBody =
+    c.type === "EB-1A" ? (
+      boxes(EB1A_CRITERIA)
+    ) : (
+      <>
+        <div className="seg">
+          {(
+            [
+              ["advanced", "高等学位", "硕士及以上，或学士加五年递进经验"],
+              ["exceptional", "特殊能力", "六项标准里满足至少三项"],
+            ] as const
+          ).map(([id, label, note]) => (
+            <button type="button" key={id} className={c.eb2 === id ? "on" : ""} onClick={() => patchCase((x) => ({ ...x, eb2: id }))}>
+              {label}
+              <small>{note}</small>
+            </button>
+          ))}
+        </div>
+        {c.eb2 === "exceptional" && boxes(EXCEPTIONAL_CRITERIA)}
+      </>
+    );
+  const pickedCount =
+    c.type === "EB-1A"
+      ? claims.filter((id) => EB1A_CRITERIA.some((k) => k.id === id)).length
+      : claims.filter((id) => EXCEPTIONAL_CRITERIA.some((k) => k.id === id)).length;
+
   const steps: Step[] = [
     {
       id: "profile",
@@ -94,6 +145,21 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       desc: "让 AI 逐项评估现有材料的强弱，告诉你缺什么、先补什么。建议在动笔写文书之前做。",
       done: assess.length > 0,
       actions: assess.length ? openDocs(assess) : [start("case-strength-assessor")],
+    },
+    {
+      id: "claims",
+      title: "选择申报条件",
+      desc:
+        c.type === "EB-1A"
+          ? `从十项标准里选出你要主张的，至少 ${MIN_CLAIMS} 项。选证据最扎实的几项，不是越多越好；拿不准时先看上一步的评估结果。之后 AI 写申请信时只论证你选的这几项。`
+          : `NIW 先要满足 EB-2 的基础资格，选一条路：有硕士及以上学位的选「高等学位」；没有的走「特殊能力」，并选出至少 ${MIN_CLAIMS} 项要主张的标准。`,
+      done: claimsReady(c),
+      have:
+        c.type === "EB-1A" || c.eb2 === "exceptional"
+          ? `已选 ${pickedCount} 项${pickedCount < MIN_CLAIMS ? `，还差 ${MIN_CLAIMS - pickedCount} 项` : ""}`
+          : "",
+      body: claimsBody,
+      actions: [],
     },
     {
       id: "notable",
@@ -206,6 +272,7 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
                 </strong>
                 <p>{s.desc}</p>
                 {s.have && <p className="step-have">{s.have}</p>}
+                {s.body}
                 <div className="step-actions">
                   {s.actions.map((a, k) => (
                     <button key={a.label} className={k === 0 && s === current ? "btn-accent" : "btn-ghost"} onClick={a.run}>

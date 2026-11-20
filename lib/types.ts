@@ -50,6 +50,8 @@ export type ImmigrationCase = {
   done: string[]; // 已完成的材料项 id
   files?: Attachment[]; // 案件文件（内容存在 IndexedDB）
   pack?: PackConfig;
+  claims?: string[]; // 申报条件：选择主张的标准（见 lib/claims.ts）
+  eb2?: "advanced" | "exceptional"; // NIW：按高等学位还是特殊能力满足 EB-2
   guide?: Record<string, "done" | "skip">; // 申请向导里用户手动标记的步骤
 };
 

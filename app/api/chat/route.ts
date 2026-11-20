@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "消息为空" }, { status: 400 });
   }
 
-  const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 4000) : "";
+  const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 8000) : "";
   const doc = body.doc && typeof body.doc.content === "string" ? body.doc : null;
   if (doc) {
     const last = messages[messages.length - 1].content as Anthropic.Beta.BetaContentBlockParam[];

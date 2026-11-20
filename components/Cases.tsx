@@ -7,6 +7,7 @@ import Guide from "@/components/Guide";
 import Packer from "@/components/Packer";
 import type { Profile } from "@/lib/profile";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
+import { claimsLine } from "@/lib/claims";
 import { workflowsFor } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
 import { ACCEPT, dropFile, fmtSize, saveUploads } from "@/lib/files";
@@ -28,7 +29,8 @@ type Props = {
 
 type Tab = "guide" | "docs" | "files" | "checklist" | "pack";
 
-export const caseLine = (c: ImmigrationCase) => `当前案件：${c.name}（${c.type}）`;
+export const caseLine = (c: ImmigrationCase) =>
+  [`当前案件：${c.name}（${c.type}）`, claimsLine(c)].filter(Boolean).join("\n");
 
 /** 一个案件里可供聊天引用的资料 */
 export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: string): Library {
