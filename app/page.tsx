@@ -186,6 +186,7 @@ export default function Home() {
             docs={docs}
             setDocs={setDocs}
             profileText={profileToText(profile)}
+            petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
           />
         ) : (
           <Profile profile={profile} setProfile={setProfile} />

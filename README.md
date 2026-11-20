@@ -4,7 +4,7 @@
 
 - **聊天**：流式对话，可上传 PDF、图片、TXT、Markdown（简历、推荐信、Petition Letter 草稿等）让 AI 分析
 - **我的档案**：填写学历、学术记录和未来计划，聊天时自动作为背景提供给 AI
-- **案件**：每个案件是一个项目，包含文档（左边文档、右边聊天，AI 直接起草和修改，可撤销）、上传的文件和材料清单；聊天可以关联案件并引用其中的文档和文件
+- **案件**：每个案件是一个项目，包含文档（左边文档、右边聊天，AI 直接起草和修改，可撤销）、上传的文件、材料清单，以及把文书和材料合成一份带目录、Exhibit 分隔页和页码的 PDF 的「打包下载」；聊天可以关联案件并引用其中的文档和文件
 
 ## 运行
 
@@ -26,6 +26,7 @@ npm run dev                        # http://localhost:3000
 | `components/Profile.tsx` | 个人档案表单 |
 | `components/Docs.tsx` | 文档工作区（文档 + 聊天） |
 | `lib/files.ts` | 文件校验与存储（IndexedDB） |
+| `components/Packer.tsx`、`lib/packet.ts` | 打包下载：把文书和材料合成一份 PDF |
 | `lib/docEdits.ts` | 解析并应用 AI 对文档的修改 |
 | `app/api/chat/route.ts` | 调用 Claude API 并流式返回，系统提示词在这里 |
 | `lib/checklists.ts` | NIW / EB-1A 材料清单 |

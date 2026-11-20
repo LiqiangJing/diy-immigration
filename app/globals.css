@@ -179,6 +179,20 @@ button:disabled { cursor: not-allowed; }
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-list .link-danger { align-self: center; }
 
+.tabs { overflow-x: auto; }
+.tabs button { white-space: nowrap; }
+.pack-list { list-style: none; margin: 0; padding: 0; }
+.pack-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); margin-top: 8px; }
+.pack-list li.off { opacity: .55; }
+.pack-list input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+.pack-no { width: 74px; flex: none; font-size: 13px; font-weight: 600; color: var(--accent); }
+.pack-title { flex: 1; min-width: 180px; font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); }
+.pack-list select { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; background: var(--card); color: var(--text); }
+.pack-list .tag { margin: 0; }
+.btn-ghost:disabled { opacity: .35; }
+.btn-accent:disabled { opacity: .6; }
+.pack-actions { display: flex; align-items: center; gap: 14px; margin: 20px 0 8px; }
+
 /* ---------- Docs 工作区 ---------- */
 .section-title { font-size: 14px; color: var(--muted); font-weight: 500; margin: 26px 0 10px; }
 .workspace { flex: 1; min-height: 0; display: flex; }

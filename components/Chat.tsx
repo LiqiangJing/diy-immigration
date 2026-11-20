@@ -382,7 +382,6 @@ export default function Chat({
         </div>
         <div className="composer-wrap">
           {composer}
-          <div className="disclaimer">AI 生成内容仅供参考，不构成法律意见，请核实重要信息</div>
         </div>
       </div>
     );
@@ -424,7 +423,6 @@ export default function Chat({
       </div>
       <div className="composer-wrap">
         {composer}
-        <div className="disclaimer">AI 生成内容仅供参考，不构成法律意见，请核实重要信息</div>
       </div>
     </div>
   );

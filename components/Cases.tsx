@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DocList, DocWorkspace } from "@/components/Docs";
 import type { Library } from "@/components/Chat";
+import Packer from "@/components/Packer";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
 import { ACCEPT, dropFile, fmtSize, saveUploads } from "@/lib/files";
 import { uid } from "@/lib/types";
@@ -14,9 +15,10 @@ type Props = {
   docs: DocFile[];
   setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
   profileText: string;
+  petitioner: string;
 };
 
-type Tab = "docs" | "files" | "checklist";
+type Tab = "docs" | "files" | "checklist" | "pack";
 
 export const caseLine = (c: ImmigrationCase) => `当前案件：${c.name}（${c.type}）`;
 
@@ -30,7 +32,7 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-export default function Cases({ cases, setCases, docs, setDocs, profileText }: Props) {
+export default function Cases({ cases, setCases, docs, setDocs, profileText, petitioner }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
@@ -162,6 +164,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText }: P
               ["docs", `文档 ${caseDocs.length}`],
               ["files", `文件 ${files.length}`],
               ["checklist", `材料清单 ${pct}%`],
+              ["pack", "打包下载"],
             ] as [Tab, string][]
           ).map(([t, label]) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
@@ -237,6 +240,10 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText }: P
               </ul>
             )}
           </>
+        )}
+
+        {tab === "pack" && (
+          <Packer c={open} docs={caseDocs} petitioner={petitioner} patchCase={(fn) => patchCase(open.id, fn)} />
         )}
 
         {tab === "checklist" && (

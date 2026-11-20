@@ -31,6 +31,14 @@ export type DocFile = {
   caseId?: string; // 所属案件
 };
 
+/** 打包下载的设置 */
+export type PackConfig = {
+  order: string[]; // 材料顺序
+  skip: string[]; // 不放进包里的
+  titles: Record<string, string>; // 目录里显示的标题
+  roles: Record<string, "body" | "exhibit">;
+};
+
 export type CaseType = "NIW" | "EB-1A";
 
 export type ImmigrationCase = {
@@ -40,6 +48,7 @@ export type ImmigrationCase = {
   createdAt: number;
   done: string[]; // 已完成的材料项 id
   files?: Attachment[]; // 案件文件（内容存在 IndexedDB）
+  pack?: PackConfig;
 };
 
 /** 发给 /api/chat 的消息结构 */
