@@ -1,12 +1,15 @@
 /**
- * 学术数据查询，数据来自 OpenAlex（https://openalex.org）。
- *   GET /api/scholar?q=姓名      → 候选作者列表
- *   GET /api/scholar?id=A123...  → 该作者的统计数据和论文列表
+ * 学术数据查询。
+ *   GET  /api/scholar?gs=链接     → 读取用户填的 Google Scholar 主页
+ *   POST /api/scholar {html}      → 解析用户另存的 Google Scholar 网页（服务器被 Google 拦截时用）
+ *   GET  /api/scholar?q=姓名      → 在 OpenAlex 里按姓名找候选作者
+ *   GET  /api/scholar?id=A123...  → OpenAlex 里该作者的统计数据和论文列表
  * 不配置 OPENALEX_API_KEY 也能用，但每天的免费额度很小。
  */
 
 import { getUser } from "@/lib/server/auth";
 import { addCredits, SCHOLAR_COST } from "@/lib/server/credits";
+import { fetchScholar, parseScholarHtml, scholarUserId } from "@/lib/server/scholar";
 
 export const runtime = "nodejs";
 
@@ -27,11 +30,26 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim().slice(0, 100);
   const id = searchParams.get("id")?.trim();
+  const gs = searchParams.get("gs")?.trim();
 
   const user = getUser(req);
   if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
-  if (id && user.credits < SCHOLAR_COST) {
+  if ((id || gs) && user.credits < SCHOLAR_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
+  }
+
+  if (gs) {
+    const userId = scholarUserId(gs);
+    if (!userId) return Response.json({ error: "这不是有效的 Google Scholar 个人主页链接。" }, { status: 400 });
+    const result = await fetchScholar(userId);
+    if (!result || result === "blocked") {
+      return Response.json(
+        { error: "Google 拦截了服务器的访问，没能直接读到你的主页。", blocked: true },
+        { status: 502 },
+      );
+    }
+    addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
+    return Response.json(result);
   }
 
   try {
@@ -48,6 +66,7 @@ export async function GET(req: Request) {
       ]);
       addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
       return Response.json({
+        source: "OpenAlex",
         author: {
           id,
           name: author.display_name,
@@ -93,4 +112,27 @@ export async function GET(req: Request) {
         : "学术数据接口暂时访问不了，请稍后再试。";
     return Response.json({ error: msg }, { status: 502 });
   }
+}
+
+/** 解析用户自己在浏览器里另存的 Google Scholar 主页 */
+export async function POST(req: Request) {
+  const user = getUser(req);
+  if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
+  if (user.credits < SCHOLAR_COST) {
+    return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
+  }
+  const body = await req.json().catch(() => null);
+  const html = typeof body?.html === "string" ? body.html : "";
+  if (!html || html.length > 5_000_000) {
+    return Response.json({ error: "文件为空或太大，请确认上传的是另存的 Scholar 主页（.html）。" }, { status: 400 });
+  }
+  const result = parseScholarHtml(html);
+  if (!result) {
+    return Response.json(
+      { error: "没能从这个文件里读出论文列表。请确认是在你的 Google Scholar 个人主页上另存的网页。" },
+      { status: 400 },
+    );
+  }
+  addCredits(user.id, -SCHOLAR_COST, "获取学术数据");
+  return Response.json(result);
 }

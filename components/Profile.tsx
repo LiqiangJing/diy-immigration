@@ -122,6 +122,8 @@ export default function Profile({ profile: p, setProfile }: Props) {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [scholarError, setScholarError] = useState("");
+  const [needUpload, setNeedUpload] = useState(false);
+  const isGs = /scholar\.google\./.test(p.scholarUrl) && /[?&]user=/.test(p.scholarUrl);
   const fullName = `${p.firstName} ${p.lastName}`.trim();
   const account = useAccount();
   const cost = account.me?.scholarCost ?? 0;
@@ -131,6 +133,66 @@ export default function Profile({ profile: p, setProfile }: Props) {
     const data = await res.json().catch(() => null);
     if (!res.ok || !data) throw new Error(data?.error ?? "获取失败，请稍后再试。");
     return data;
+  }
+
+  // 把接口返回的结果存进档案
+  function apply(data: any) {
+    set({
+      papers: `${data.author.papers ?? ""}${data.author.more ? "+" : ""}`,
+      citations: String(data.author.citations ?? ""),
+      hIndex: data.author.hIndex == null ? "" : String(data.author.hIndex),
+      publications: data.works,
+      scholarSource: {
+        name: data.author.name,
+        fetchedAt: Date.now(),
+        source: data.source,
+        more: Boolean(data.author.more),
+      },
+    });
+    setCandidates(null);
+    setNeedUpload(false);
+  }
+
+  // 直接读取填写的 Google Scholar 主页
+  async function fetchGs() {
+    if (!account.guard(cost)) return;
+    setLoading(true);
+    setScholarError("");
+    setCandidates(null);
+    try {
+      const res = await fetch(`/api/scholar?gs=${encodeURIComponent(p.scholarUrl)}`);
+      const data = await res.json().catch(() => null);
+      if (data?.blocked) setNeedUpload(true);
+      if (!res.ok || !data) throw new Error(data?.error ?? "获取失败，请稍后再试。");
+      apply(data);
+    } catch (e) {
+      setScholarError(e instanceof Error ? e.message : "获取失败");
+    } finally {
+      setLoading(false);
+      account.refresh();
+    }
+  }
+
+  // 解析用户另存的 Scholar 网页
+  async function uploadGs(file: File) {
+    if (!account.guard(cost)) return;
+    setLoading(true);
+    setScholarError("");
+    try {
+      const res = await fetch("/api/scholar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html: await file.text() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error(data?.error ?? "解析失败。");
+      apply(data);
+    } catch (e) {
+      setScholarError(e instanceof Error ? e.message : "解析失败");
+    } finally {
+      setLoading(false);
+      account.refresh();
+    }
   }
 
   async function searchAuthor() {
@@ -152,15 +214,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
     setLoading(true);
     setScholarError("");
     try {
-      const data = await call(`id=${c.id}`);
-      set({
-        papers: String(data.author.papers ?? ""),
-        citations: String(data.author.citations ?? ""),
-        hIndex: data.author.hIndex == null ? "" : String(data.author.hIndex),
-        publications: data.works,
-        scholarSource: { name: data.author.name, fetchedAt: Date.now() },
-      });
-      setCandidates(null);
+      apply(await call(`id=${c.id}`));
     } catch (e) {
       setScholarError(e instanceof Error ? e.message : "获取失败");
     } finally {
@@ -249,16 +303,43 @@ export default function Profile({ profile: p, setProfile }: Props) {
           />
         </label>
         <div className="scholar-fetch">
-          <button className="btn-accent" disabled={loading || !fullName} onClick={searchAuthor}>
+          <button className="btn-accent" disabled={loading || (!isGs && !fullName)} onClick={isGs ? fetchGs : searchAuthor}>
             {loading ? "正在获取…" : "一键获取论文和引用数据"}
           </button>
           <small>
-            {fullName
+            {isGs
+              ? `直接读取上面填写的 Google Scholar 主页，数字和主页上一致${cost ? `，每次 ${cost} 个 credit` : ""}。`
+              : fullName
               ? `按英文姓名「${fullName}」在 OpenAlex 学术数据库里查找，选中你本人后自动填入下面的数字和论文列表${cost ? `，每次 ${cost} 个 credit` : ""}。`
               : "请先在上面填写英文姓名。"}
           </small>
         </div>
         {scholarError && <div className="notice">{scholarError}</div>}
+        {needUpload && (
+          <div className="gs-upload">
+            <strong>换一种方式：上传你自己保存的主页</strong>
+            <ol>
+              <li>在浏览器里打开你的 Google Scholar 主页，点页面底部的 SHOW MORE，直到所有论文都显示出来。</li>
+              <li>按 Cmd + S（Windows 是 Ctrl + S），格式选「网页，仅 HTML」，保存。</li>
+              <li>把保存下来的 .html 文件选到这里。</li>
+            </ol>
+            <input
+              type="file"
+              accept=".html,.htm,text/html"
+              disabled={loading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadGs(f);
+                e.target.value = "";
+              }}
+            />
+            {fullName && (
+              <button className="link" onClick={searchAuthor} disabled={loading}>
+                或者改用 OpenAlex 按姓名查（数字可能和 Scholar 不一致）
+              </button>
+            )}
+          </div>
+        )}
         {candidates && (
           <div className="candidates">
             {candidates.length === 0 ? (
@@ -300,8 +381,11 @@ export default function Profile({ profile: p, setProfile }: Props) {
                 `（${p.scholarSource.name}，${new Date(p.scholarSource.fetchedAt).toLocaleDateString("zh-CN")} 获取）`}
             </summary>
             <small>
-              数据来自 OpenAlex，和 Google Scholar 的数字通常会有出入，写进文书前请以你实际要引用的来源为准。在案件里新建「论文与引用记录」文档可以把这份列表变成一份
-              Exhibit。
+              {p.scholarSource?.source === "Google Scholar"
+                ? `数据来自你的 Google Scholar 主页${p.scholarSource.more ? "，主页上还有更多论文没有列出（只读取了引用最多的前 100 篇）" : ""}。`
+                : "数据来自 OpenAlex，和 Google Scholar 的数字通常会有出入，写进文书前请以你实际要引用的来源为准。"}
+              在案件里新建「论文与引用记录」文档可以把这份列表变成一份 Exhibit。作为证据递交时，建议同时把 Scholar
+              主页打印成 PDF（Cmd + P → 存储为 PDF）上传到案件的「文件」里，那是审查官认可的原始页面。
             </small>
             <ol>
               {p.publications.map((w, i) => (

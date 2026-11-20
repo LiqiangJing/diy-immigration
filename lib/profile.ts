@@ -23,7 +23,7 @@ export type Profile = {
   citations: string;
   hIndex: string;
   publications: Publication[];
-  scholarSource: { name: string; fetchedAt: number } | null; // 一键获取的数据来源
+  scholarSource: { name: string; fetchedAt: number; source?: string; more?: boolean } | null; // 一键获取的数据来源
   reviews: string;
   currentPosition: string;
   sameField: "" | "yes" | "no";
@@ -90,7 +90,9 @@ export function profileToText(p: Profile): string {
   add("总引用数", p.citations);
   add("h-index", p.hIndex);
   if (p.publications.length) {
-    lines.push(`引用最多的论文（数据来自 OpenAlex，共 ${p.publications.length} 篇，列出前 15 篇）：`);
+    lines.push(
+      `引用最多的论文（数据来自 ${p.scholarSource?.source ?? "OpenAlex"}，共 ${p.publications.length} 篇，列出前 15 篇）：`,
+    );
     p.publications.slice(0, 15).forEach((w, i) =>
       lines.push(`  ${i + 1}. ${w.title}${w.venue ? `，${w.venue}` : ""}${w.year ? `，${w.year}` : ""}，被引 ${w.citations} 次`),
     );
@@ -121,7 +123,7 @@ export function citationReport(p: Profile): string {
     "",
     `**h-index:** ${p.hIndex || "N/A"}`,
     "",
-    `Source: OpenAlex (openalex.org)${date ? `, retrieved ${date}` : ""}. Publications are listed by number of citations.`,
+    `Source: ${p.scholarSource?.source === "Google Scholar" ? "Google Scholar (scholar.google.com)" : "OpenAlex (openalex.org)"}${date ? `, retrieved ${date}` : ""}. Publications are listed by number of citations.`,
     "",
     "## Publications",
     "",
