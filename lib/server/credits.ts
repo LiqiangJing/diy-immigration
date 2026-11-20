@@ -23,11 +23,16 @@ export type Usage = {
   cache_creation_input_tokens?: number | null;
 };
 
-// Claude Opus 5.5 的价格，美元 / 百万 token
-const PRICE = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };
+// 各模型的价格，美元 / 百万 token
+export const PRICES = {
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  // GPT-6.2 Sol 的标准价；超长上下文（约 27 万 token 以上）官方另有加价，这里没有计入
+  "gpt-6.2-sol": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+} as const;
+export type Price = (typeof PRICES)[keyof typeof PRICES];
 
 /** 一次聊天要扣多少 credit；拿不到用量（比如中途被停止）时按最低 1 个算 */
-export function chatCost(u: Usage | null | undefined): number {
+export function chatCost(u: Usage | null | undefined, PRICE: Price = PRICES["claude-opus-5-5"]): number {
   if (!u) return 1;
   const usd =
     ((u.input_tokens ?? 0) * PRICE.input +
