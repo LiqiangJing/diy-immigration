@@ -71,10 +71,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Credit 余额不足，请先充值。" }, { status: 402 });
   }
   let charged = false;
-  const charge = (usage: Parameters<typeof chatCost>[0]) => {
+  // produced = 这次有没有真的给出回复；后端出错、什么都没生成时不扣费
+  const charge = (usage: Parameters<typeof chatCost>[0], produced = true) => {
     if (charged) return;
     charged = true;
-    addCredits(user.id, -chatCost(usage), "聊天");
+    if (produced) addCredits(user.id, -chatCost(usage), "聊天");
   };
 
   let body: {
@@ -151,8 +152,12 @@ export async function POST(req: Request) {
   const out = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (s: string) => controller.enqueue(encoder.encode(s));
+      let produced = false;
       try {
-        stream.on("text", (delta) => send(delta));
+        stream.on("text", (delta) => {
+          produced = true;
+          send(delta);
+        });
         const final = await stream.finalMessage();
         charge(final.usage);
         if (final.stop_reason === "refusal") {
@@ -170,7 +175,7 @@ export async function POST(req: Request) {
         console.error("[api/chat]", err);
         send(`\n\n> ⚠️ ${msg}`);
       } finally {
-        charge(null); // 出错或中途停止时拿不到用量，按最低数额扣
+        charge(null, produced); // 中途停止时拿不到用量，按最低数额扣；完全没生成则不扣
         try {
           controller.close();
         } catch {}

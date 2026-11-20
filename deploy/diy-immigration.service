@@ -1,0 +1,15 @@
+[Unit]
+Description=DIY Immigration (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/diy-immigration
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npx next start -H 127.0.0.1 -p 3001
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

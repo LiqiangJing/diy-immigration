@@ -1,0 +1,13 @@
+# 反向代理：对外的 80 / 443 端口转给本机的应用。
+# 有了正式域名后，把下面的 sslip.io 地址换成域名即可，HTTPS 证书会自动签发。
+
+diy.3-14-73-66.sslip.io {
+	encode gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+# 直接用 IP 访问（没有 HTTPS）
+:80 {
+	encode gzip
+	reverse_proxy 127.0.0.1:3001
+}

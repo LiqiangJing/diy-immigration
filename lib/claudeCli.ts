@@ -13,7 +13,7 @@ export function streamViaClaudeCli(opts: {
   content: unknown[]; // 一条 user 消息的 content blocks
   signal: AbortSignal;
   /** 结束时回调一次；拿不到用量时参数为 null */
-  onDone?: (usage: Record<string, number> | null) => void;
+  onDone?: (usage: Record<string, number> | null, produced: boolean) => void;
 }): ReadableStream<Uint8Array> {
   const cwd = join(tmpdir(), "pathway-claude-cli");
   mkdirSync(cwd, { recursive: true });
@@ -62,7 +62,7 @@ export function streamViaClaudeCli(opts: {
         if (closed) return;
         closed = true;
         opts.signal.removeEventListener("abort", kill);
-        opts.onDone?.(usage);
+        opts.onDone?.(usage, gotText);
         try {
           controller.close();
         } catch {}
