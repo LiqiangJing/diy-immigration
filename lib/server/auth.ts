@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import nodemailer from "nodemailer";
 import { db } from "./db";
 import { addCredits, SIGNUP_BONUS } from "./credits";
+import { mailConfigured, sendMail } from "./mail";
 
 /** 邮箱验证码登录 + 基于 cookie 的会话 */
 
@@ -21,22 +21,12 @@ export function normalizeEmail(raw: unknown): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 200 ? email : null;
 }
 
-export const mailConfigured = () => Boolean(process.env.SMTP_HOST);
-
-async function sendCode(email: string, code: string) {
-  const transport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: Number(process.env.SMTP_PORT) === 465,
-    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
-  });
-  await transport.sendMail({
-    from: process.env.MAIL_FROM || process.env.SMTP_USER,
+const sendCode = (email: string, code: string) =>
+  sendMail({
     to: email,
     subject: `${code} 是你的 DIY Immigration 登录验证码`,
     text: `你的登录验证码是 ${code}，10 分钟内有效。\n\n如果不是你本人在登录，忽略这封邮件即可。`,
   });
-}
 
 /**
  * 生成并发送验证码。

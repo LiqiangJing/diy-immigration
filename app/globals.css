@@ -269,6 +269,12 @@ button:disabled { cursor: not-allowed; }
 .account-box button:hover, .account-box button.on { background: var(--card); }
 .account-email { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-credits { font-size: 12px; color: var(--accent); }
+.account-box .contact-link { font-size: 13px; color: var(--muted); padding: 6px 10px; }
+.modal textarea { font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; resize: vertical; }
+.wechat { display: flex; gap: 12px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.wechat img { width: 96px; height: 96px; border-radius: 6px; flex: none; }
+.wechat span { font-size: 13px; color: var(--muted); }
+.wechat strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
 .modal-scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .35); display: grid; place-items: center; padding: 16px; }
 .modal { width: 100%; max-width: 400px; background: var(--card); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
 .modal h3 { margin: 0; font-size: 18px; }

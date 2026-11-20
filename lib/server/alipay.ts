@@ -20,7 +20,8 @@ function sdk() {
     appId: process.env.ALIPAY_APP_ID!,
     privateKey: process.env.ALIPAY_PRIVATE_KEY!,
     alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY!,
-    gateway: process.env.ALIPAY_GATEWAY || undefined,
+    // 不设 ALIPAY_GATEWAY 时走正式网关。不能传 undefined，那会把 SDK 的默认值冲掉
+    gateway: process.env.ALIPAY_GATEWAY || "https://openapi.alipay.com/gateway.do",
     keyType: process.env.ALIPAY_KEY_TYPE === "PKCS8" ? "PKCS8" : "PKCS1",
   });
 }

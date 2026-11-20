@@ -7,6 +7,8 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/srv/diy-immigration
 Environment=NODE_ENV=production
+# 支付宝要求请求里的时间戳是北京时间
+Environment=TZ=Asia/Shanghai
 ExecStart=/usr/bin/npx next start -H 127.0.0.1 -p 3001
 Restart=always
 RestartSec=3

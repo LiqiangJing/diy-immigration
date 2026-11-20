@@ -6,6 +6,7 @@ import Cases, { caseLibrary, caseLine } from "@/components/Cases";
 import Profile from "@/components/Profile";
 import Account from "@/components/Account";
 import Auth from "@/components/Auth";
+import Contact from "@/components/Contact";
 import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
 import { citationReport, emptyProfile, profileToText } from "@/lib/profile";
@@ -44,6 +45,7 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   const [toast, setToast] = useState("");
 
   const refresh = useCallback(async () => {
@@ -197,6 +199,9 @@ export default function Home() {
         )}
 
         <div className="account-box">
+          <button className="contact-link" onClick={() => setContactOpen(true)}>
+            联系我们
+          </button>
           {me?.user ? (
             <button className={view === "account" ? "on" : ""} onClick={() => go("account")}>
               <span className="account-email">{me.user.email}</span>
@@ -263,6 +268,7 @@ export default function Home() {
         )}
       </main>
 
+      {contactOpen && <Contact onClose={() => setContactOpen(false)} />}
       {authOpen && (
         <Auth
           onClose={() => setAuthOpen(false)}

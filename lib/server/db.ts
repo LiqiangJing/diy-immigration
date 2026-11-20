@@ -42,6 +42,15 @@ export function db(): Database.Database {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id, id DESC);
+    -- 「联系我们」的留言
+    CREATE TABLE IF NOT EXISTS contact_messages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    TEXT,
+      email      TEXT NOT NULL,
+      message    TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      emailed    INTEGER NOT NULL DEFAULT 0
+    );
     -- 支付宝订单
     CREATE TABLE IF NOT EXISTS orders (
       order_no   TEXT PRIMARY KEY,
