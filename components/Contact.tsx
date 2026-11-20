@@ -53,10 +53,10 @@ export default function Contact({ onClose }: { onClose: () => void }) {
             {qr && (
               <div className="wechat">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/wechat-qr.png" alt="微信二维码" onError={() => setQr(false)} />
+                <img src="/wechat-qr.png" alt="企业微信二维码" onError={() => setQr(false)} />
                 <span>
-                  <strong>加微信进交流群</strong>
-                  扫码添加，备注「DIY 移民」，我们拉你进用户群，问题能更快得到回复。
+                  <strong>加企业微信进交流群</strong>
+                  用微信扫码添加我们，我们拉你进用户交流群，问题能更快得到回复。
                 </span>
               </div>
             )}
