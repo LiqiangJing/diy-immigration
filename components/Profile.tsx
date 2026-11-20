@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAccount } from "@/lib/account";
+import Notable from "@/components/Notable";
 import { DEGREE_TYPES, REVIEW_OPTIONS, primaryPatch, primaryRecord } from "@/lib/profile";
 import type { Degree, Profile as ProfileData, Related, ScholarRecord } from "@/lib/profile";
 import { uid } from "@/lib/types";
@@ -455,6 +456,8 @@ export default function Profile({ profile: p, setProfile }: Props) {
           />
         </div>
       </section>
+
+      <Notable profile={p} setProfile={setProfile} />
 
       <section className="card">
         <h3>工作与未来计划</h3>

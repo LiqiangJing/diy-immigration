@@ -9,7 +9,7 @@ import Auth from "@/components/Auth";
 import Contact from "@/components/Contact";
 import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
-import { citationReport, emptyProfile, normalizeProfile, profileToText } from "@/lib/profile";
+import { citationReport, emptyProfile, normalizeProfile, notableReport, profileToText } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
@@ -250,6 +250,7 @@ export default function Home() {
             profileText={profileToText(profile)}
             petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
             citationReport={citationReport(profile)}
+            notableReport={notableReport(profile)}
           />
         ) : view === "profile" ? (
           <Profile profile={profile} setProfile={setProfile} />

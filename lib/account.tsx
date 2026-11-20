@@ -7,6 +7,7 @@ export type Me = {
   history: { delta: number; reason: string; at: number }[];
   packs: { id: string; usd: number; cny: number; credits: number }[];
   scholarCost: number;
+  notableMin: number;
   stripeEnabled: boolean;
   alipayEnabled: boolean;
   alipaySandbox: boolean;

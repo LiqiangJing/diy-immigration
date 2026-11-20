@@ -1,5 +1,5 @@
 import { getUser } from "@/lib/server/auth";
-import { history, PACKS, SCHOLAR_COST } from "@/lib/server/credits";
+import { history, PACKS, NOTABLE_MIN_BALANCE, SCHOLAR_COST } from "@/lib/server/credits";
 import { alipayConfigured, alipaySandbox } from "@/lib/server/alipay";
 
 export const runtime = "nodejs";
@@ -14,6 +14,7 @@ export async function GET(req: Request) {
       history: user ? history(user.id) : [],
       packs: PACKS,
       scholarCost: SCHOLAR_COST,
+      notableMin: NOTABLE_MIN_BALANCE,
       stripeEnabled: Boolean(process.env.STRIPE_SECRET_KEY),
       alipayEnabled: alipayConfigured(),
       alipaySandbox: alipaySandbox(),

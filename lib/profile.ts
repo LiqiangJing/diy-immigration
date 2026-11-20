@@ -24,6 +24,48 @@ export type ScholarRecord = {
   more?: boolean; // 来源主页上还有没列出来的论文
 };
 
+/** 别人引用这篇论文的方式 */
+export const CITE_CATEGORIES = {
+  praise: { zh: "高度评价", en: "Praised the work" },
+  builds: { zh: "在此基础上扩展", en: "Built upon the work" },
+  baseline: { zh: "作为 baseline / benchmark", en: "Used as a baseline or benchmark" },
+  uses: { zh: "使用了方法或数据", en: "Used the method or data" },
+  mention: { zh: "简单提及", en: "Mentioned" },
+  critical: { zh: "指出不足", en: "Critical" },
+} as const;
+export type CiteCategory = keyof typeof CITE_CATEGORIES;
+
+export type NotableCitation = {
+  citingTitle: string;
+  authors: string;
+  venue: string;
+  year: number | null;
+  citations: number; // 引用方论文自己的被引次数
+  url: string;
+  topAuthor: string; // 引用方作者里的资深学者，没有则为空
+  contexts: string[]; // 引用方论文里提到这篇论文的原句，来自 Semantic Scholar，未经改写
+  category: CiteCategory;
+  importance: "high" | "medium" | "low";
+  reason: string;
+  selected?: boolean; // 用户手动勾选 / 取消；未设置时 high 默认选中
+};
+
+/** 一篇论文的引用分析结果 */
+export type CitationAnalysis = {
+  title: string;
+  year: number | null;
+  paperUrl: string;
+  analyzedAt: number;
+  total: number; // Semantic Scholar 里的引用总数
+  scanned?: number; // 实际检查了多少条（引用特别多时只看前几千条）
+  selfCitations: number;
+  withContext: number; // 能拿到引用原文的独立引用数
+  analyzed: number; // 实际交给模型判断的条数
+  items: NotableCitation[];
+};
+
+export const isSelected = (c: NotableCitation) => c.selected ?? c.importance === "high";
+
 export type Profile = {
   firstName: string;
   lastName: string;
@@ -39,6 +81,7 @@ export type Profile = {
   hIndex: string;
   records: ScholarRecord[]; // 各来源获取到的记录
   primarySource: string; // 主要数字取自哪个来源；手填或没有记录时为空
+  analyses: CitationAnalysis[]; // 各篇论文的重要引用分析
   reviews: string;
   currentPosition: string;
   sameField: "" | "yes" | "no";
@@ -66,6 +109,7 @@ export const emptyProfile = (): Profile => ({
   s2Url: "",
   records: [],
   primarySource: "",
+  analyses: [],
   reviews: "",
   currentPosition: "",
   sameField: "",
@@ -80,6 +124,7 @@ export const emptyProfile = (): Profile => ({
 export function normalizeProfile(raw: Record<string, any>): Profile {
   const p = { ...emptyProfile(), ...raw } as Profile & Record<string, any>;
   if (!Array.isArray(p.records)) p.records = [];
+  if (!Array.isArray(p.analyses)) p.analyses = [];
   if (!p.records.length && Array.isArray(raw.publications) && raw.publications.length) {
     const source = raw.scholarSource?.source ?? "OpenAlex";
     p.records = [
@@ -163,6 +208,12 @@ export function profileToText(p: Profile): string {
       lines.push(`  ${i + 1}. ${w.title}${w.venue ? `，${w.venue}` : ""}${w.year ? `，${w.year}` : ""}，被引 ${w.citations} 次`),
     );
   }
+  const picked = p.analyses.reduce((n, a) => n + a.items.filter(isSelected).length, 0);
+  if (p.analyses.length) {
+    lines.push(
+      `重要引用：已分析 ${p.analyses.length} 篇论文的引用，选出 ${picked} 条。具体的引用原文在案件的「重要引用」文档里，写申请信时请让用户引用那份文档，不要凭空写引用评价。`,
+    );
+  }
   add("审稿次数", p.reviews);
   if (p.sameField === "yes") lines.push("未来工作：将继续在同一或相近领域工作");
   if (p.sameField === "no")
@@ -221,4 +272,38 @@ export function citationReport(p: Profile): string {
     ),
     "",
   ].join("\n");
+}
+
+/** 英文的重要引用清单，可作为案件文档给 Petition Letter 引用；没有选中的引用时返回空串 */
+export function notableReport(p: Profile): string {
+  const papers = p.analyses
+    .map((a) => ({ a, items: a.items.filter(isSelected) }))
+    .filter((x) => x.items.length);
+  if (!papers.length) return "";
+  const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
+  const out = [
+    `# Notable Citations of ${name}'s Work`,
+    "",
+    "The quotations below are taken verbatim from the citing papers, as indexed by Semantic Scholar (semanticscholar.org). Verify each quotation against the published paper before using it in the petition.",
+    "",
+  ];
+  for (const { a, items } of papers) {
+    out.push(`## ${a.title}${a.year ? ` (${a.year})` : ""}`, "");
+    out.push(
+      `${a.total} citations indexed by Semantic Scholar. ${items.length} notable independent citations (no shared authors with the cited paper) are listed.`,
+      "",
+    );
+    items.forEach((c, i) => {
+      out.push(
+        `### ${i + 1}. ${c.citingTitle}`,
+        "",
+        `${[c.authors, c.venue, c.year].filter(Boolean).join(". ")}. Cited by ${c.citations}.${c.url ? ` ${c.url}` : ""}`,
+        "",
+        `**How it cites the work:** ${CITE_CATEGORIES[c.category].en}`,
+        "",
+        ...c.contexts.flatMap((q) => [`> ${q}`, ""]),
+      );
+    });
+  }
+  return out.join("\n");
 }

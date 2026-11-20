@@ -2,8 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ApiMessage } from "@/lib/types";
 import { streamViaClaudeCli } from "@/lib/claudeCli";
 import { getUser } from "@/lib/server/auth";
-import { addCredits, chatCost, PRICES } from "@/lib/server/credits";
-import { openaiConfigured, streamViaOpenAI } from "@/lib/server/openai";
+import { addCredits, chatCost } from "@/lib/server/credits";
+import { llmPrice, llmProvider } from "@/lib/server/llm";
+import { streamViaOpenAI } from "@/lib/server/openai";
 import { skillPrompt } from "@/lib/server/skills";
 
 export const runtime = "nodejs";
@@ -81,15 +82,8 @@ export async function POST(req: Request) {
   if (user.credits <= 0) {
     return Response.json({ error: "Credit 余额不足，请先充值。" }, { status: 402 });
   }
-  // 用哪个模型通道：LLM_PROVIDER 可强制指定；否则配了哪家的 Key 就用哪家，都没配就走本机的 Claude 订阅
-  const provider =
-    process.env.LLM_PROVIDER ||
-    (openaiConfigured()
-      ? "openai"
-      : process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
-        ? "anthropic"
-        : "cli");
-  const price = provider === "openai" ? PRICES["gpt-6.2-sol"] : PRICES["claude-opus-5-5"];
+  const provider = llmProvider();
+  const price = llmPrice(provider);
 
   let charged = false;
   // produced = 这次有没有真的给出回复；后端出错、什么都没生成时不扣费

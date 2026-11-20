@@ -5,13 +5,18 @@
 
 const BASE = "https://api.semanticscholar.org/graph/v1";
 
-async function s2(path: string, params: Record<string, string>) {
+export async function s2(path: string, params: Record<string, string>, post?: unknown) {
   const url = new URL(BASE + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const headers: Record<string, string> = {};
   if (process.env.S2_API_KEY) headers["x-api-key"] = process.env.S2_API_KEY;
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000), cache: "no-store" });
+    const res = await fetch(url, {
+      headers: post ? { ...headers, "Content-Type": "application/json" } : headers,
+      ...(post ? { method: "POST", body: JSON.stringify(post) } : {}),
+      signal: AbortSignal.timeout(30_000),
+      cache: "no-store",
+    });
     if (res.ok) return res.json();
     if (res.status !== 429 || attempt >= 3) throw new Error(String(res.status));
     await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));

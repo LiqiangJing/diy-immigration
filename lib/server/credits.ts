@@ -10,6 +10,7 @@ export const SIGNUP_BONUS = 200; // 新用户赠送，大约够做一次案件�
 /** 每天（北京时间 0 点重置）只有前这么多个新注册用户拿得到赠送 */
 export const SIGNUP_DAILY_LIMIT = Number(process.env.SIGNUP_DAILY_LIMIT) || 100;
 export const SCHOLAR_COST = 20; // 一键获取学术数据
+export const NOTABLE_MIN_BALANCE = 100; // 做一次重要引用分析至少要有这么多余额（实际按用量扣）
 const MARKUP = Number(process.env.CREDIT_MARKUP) || 40; // 成本之上的加价倍数
 
 /** 充值档位：付多少美元（Stripe）或人民币（支付宝），得多少 credit */
