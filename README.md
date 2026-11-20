@@ -9,9 +9,11 @@
 
 ```bash
 npm install
-cp .env.local.example .env.local   # 填入 ANTHROPIC_API_KEY
+cp .env.local.example .env.local   # 填入 ANTHROPIC_API_KEY（可选，见下）
 npm run dev                        # http://localhost:3000
 ```
+
+没有配置 `ANTHROPIC_API_KEY` 时，聊天会改走本机已登录的 Claude Code（订阅），方便开发者自己本地测试；这条通道关闭了所有工具，只做纯文本对话。正式上线给别人用必须配置 API Key。
 
 ## 结构
 

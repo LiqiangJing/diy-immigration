@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiMessage } from "@/lib/types";
+import { streamViaClaudeCli } from "@/lib/claudeCli";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -47,13 +48,6 @@ function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
 }
 
 export async function POST(req: Request) {
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    return Response.json(
-      { error: "服务端未配置 ANTHROPIC_API_KEY。请在项目根目录创建 .env.local 并填入 Key，然后重启 npm run dev。" },
-      { status: 500 },
-    );
-  }
-
   let body: { messages?: ApiMessage[] };
   try {
     body = await req.json();
@@ -66,6 +60,23 @@ export async function POST(req: Request) {
     .filter((m) => m.content.length > 0);
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return Response.json({ error: "消息为空" }, { status: 400 });
+  }
+
+  const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+
+  // 没有配置 API Key 时，走本机 Claude Code 订阅登录（仅供本地测试）
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+    // 订阅通道一次只接收一条用户消息，所以把历史对话展开进同一条消息
+    const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+    messages.forEach((m, i) => {
+      const last = i === messages.length - 1;
+      const who = m.role === "user" ? "用户" : "助手";
+      content.push({ type: "text", text: last ? "【当前消息 · 用户】" : `【此前对话 · ${who}】` });
+      content.push(...(m.content as Anthropic.Beta.BetaContentBlockParam[]));
+    });
+    return new Response(streamViaClaudeCli({ system: SYSTEM, content, signal: req.signal }), {
+      headers,
+    });
   }
 
   const client = new Anthropic();
@@ -117,7 +128,5 @@ export async function POST(req: Request) {
     },
   });
 
-  return new Response(out, {
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  return new Response(out, { headers });
 }
