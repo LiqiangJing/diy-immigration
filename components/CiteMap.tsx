@@ -8,6 +8,8 @@ import world from "@/lib/worldMap.json";
 type Props = {
   profile: ProfileData;
   setProfile: React.Dispatch<React.SetStateAction<ProfileData>>;
+  /** 演示页用：不调接口，由调用方把事先准备好的结果放进档案 */
+  demoRun?: () => Promise<void>;
 };
 
 const COST = 30;
@@ -17,7 +19,7 @@ const SHADES = ["#d5e8df", "#a6cfbd", "#6fb096", "#3f8a6c", "#1f5f4a"];
 const EMPTY = "#eceae3";
 
 /** 「我的档案」里的引用地图：引用你论文的人分布在世界上哪些国家和机构 */
-export default function CiteMap({ profile: p, setProfile }: Props) {
+export default function CiteMap({ profile: p, setProfile, demoRun }: Props) {
   const account = useAccount();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -56,6 +58,12 @@ export default function CiteMap({ profile: p, setProfile }: Props) {
   };
 
   async function run() {
+    if (demoRun) {
+      setBusy(true);
+      await demoRun();
+      setBusy(false);
+      return;
+    }
     if (!account.guard(COST)) return;
     setBusy(true);
     setError("");

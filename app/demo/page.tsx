@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import demo from "@/lib/demoData.json";
-import { CITE_CATEGORIES, isSelected } from "@/lib/profile";
-import type { CitationAnalysis, CiteCategory } from "@/lib/profile";
+import CiteMap from "@/components/CiteMap";
+import { CITE_CATEGORIES, emptyProfile, isSelected } from "@/lib/profile";
+import type { CitationAnalysis, CiteCategory, CiteMap as CiteMapData, Profile } from "@/lib/profile";
 
 /**
  * 公开的功能演示：按姓名找到学术主页 → 读取引用数据 → 分析重要引用。
@@ -14,12 +15,38 @@ const analyses = demo.analyses as CitationAnalysis[];
 const IMPORTANCE = { high: "重要", medium: "一般", low: "较弱" } as const;
 const CAPTURED = new Date(analyses[0].analyzedAt).toLocaleDateString("zh-CN");
 type Filter = CiteCategory | "all" | "picked";
+const [FIRST, ...REST] = demo.name.split(" ");
+const baseProfile = (): Profile => ({
+  ...emptyProfile(),
+  firstName: FIRST,
+  lastName: REST.join(" "),
+  records: [
+    {
+      source: "Semantic Scholar",
+      url: demo.url,
+      name: demo.name,
+      papers: String(demo.author.papers),
+      citations: String(demo.author.citations),
+      hIndex: String(demo.author.hIndex),
+      publications: demo.works.map((w) => ({ title: w.title, year: w.year, venue: "", citations: w.citations })),
+      fetchedAt: demo.citeMap.fetchedAt,
+    },
+  ],
+});
 
 export default function Demo() {
   const [step, setStep] = useState<0 | 1 | 2>(0); // 0 还没查，1 列出候选，2 已读取记录
   const [busy, setBusy] = useState("");
   const [shown, setShown] = useState<string[]>([]);
   const [filter, setFilter] = useState<Record<string, Filter>>({});
+  const [mapProfile, setMapProfile] = useState<Profile>(baseProfile);
+  const demoMap = () =>
+    new Promise<void>((done) =>
+      setTimeout(() => {
+        setMapProfile((p) => ({ ...p, citeMap: demo.citeMap as CiteMapData }));
+        done();
+      }, 1500),
+    );
 
   const after = (label: string, ms: number, fn: () => void) => {
     setBusy(label);
@@ -37,7 +64,7 @@ export default function Demo() {
           <div>
             <h2>功能演示：一键拿到引用数据和重要引用</h2>
             <p>
-              当前用户：test。下面用一位公开学者的公开学术数据做示范，三步都只需要点一下。
+              当前用户：test。下面用一位公开学者的公开学术数据做示范，每一步都只需要点一下。
             </p>
           </div>
           <a className="btn-accent" href="/">
@@ -219,6 +246,8 @@ export default function Demo() {
               })}
           </section>
         )}
+
+        {step === 2 && <CiteMap profile={mapProfile} setProfile={setMapProfile} demoRun={demoMap} />}
 
         <p className="disclaimer">
           演示数据是 {CAPTURED} 用本站功能对公开学术数据（Semantic Scholar）实际跑出来的结果，这里原样回放，所以不用登录、不扣费。
