@@ -1,9 +1,19 @@
 /**
  * Semantic Scholar 的公开接口（api.semanticscholar.org）。
- * 不配 S2_API_KEY 也能用，但免费通道是所有人共用的，偶尔会被限流（429），这里自动重试几次。
+ * 用 S2_API_KEY 走我们自己的额度（每秒 1 次）；没配时走所有人共用的免费通道。被限流（429）时自动重试几次。
  */
 
 const BASE = "https://api.semanticscholar.org/graph/v1";
+
+// 密钥的限额是全站合计每秒 1 次请求。所有请求排成一队，相邻两次至少隔 1.1 秒，不让它超。
+const GAP_MS = 1100;
+const q = globalThis as unknown as { __s2Next?: number };
+async function turn() {
+  const now = Date.now();
+  const at = Math.max(now, q.__s2Next ?? 0);
+  q.__s2Next = at + GAP_MS;
+  if (at > now) await new Promise((r) => setTimeout(r, at - now));
+}
 
 export async function s2(path: string, params: Record<string, string>, post?: unknown) {
   const url = new URL(BASE + path);
@@ -11,6 +21,7 @@ export async function s2(path: string, params: Record<string, string>, post?: un
   const headers: Record<string, string> = {};
   if (process.env.S2_API_KEY) headers["x-api-key"] = process.env.S2_API_KEY;
   for (let attempt = 0; ; attempt++) {
+    await turn();
     const res = await fetch(url, {
       headers: post ? { ...headers, "Content-Type": "application/json" } : headers,
       ...(post ? { method: "POST", body: JSON.stringify(post) } : {}),
