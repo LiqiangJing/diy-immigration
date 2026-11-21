@@ -544,7 +544,6 @@ export default function Profile({ profile: p, setProfile }: Props) {
       </section>
       )}
 
-      <p className="disclaimer">档案只保存在你当前的浏览器里；聊天时会随消息发送给 AI。</p>
     </div>
   );
 }
