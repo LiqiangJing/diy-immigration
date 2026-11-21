@@ -349,6 +349,9 @@ export default function Home() {
           <button className="contact-link" onClick={() => setContactOpen(true)}>
             联系我们
           </button>
+          <span className="legal-links">
+            <a href="/terms" target="_blank" rel="noreferrer">服务条款</a> · <a href="/privacy" target="_blank" rel="noreferrer">隐私政策</a>
+          </span>
           {me?.user ? (
             <button className={view === "account" ? "on" : ""} onClick={() => go("account")}>
               <span className="account-email">{me.user.email}</span>

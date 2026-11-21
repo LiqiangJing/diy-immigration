@@ -49,6 +49,11 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
         {step === "email" ? (
           <>
             <p>输入邮箱，我们会发一个 6 位验证码。第一次登录会自动注册。</p>
+            <p className="legal-agree">
+              登录或注册即表示你同意
+              <a href="/terms" target="_blank" rel="noreferrer">服务条款</a>和
+              <a href="/privacy" target="_blank" rel="noreferrer">隐私政策</a>。本服务不是律师事务所，不提供法律意见。
+            </p>
             <label>
               邮箱
               <input
