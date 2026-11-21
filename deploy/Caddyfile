@@ -1,6 +1,16 @@
-# 反向代理：对外的 80 / 443 端口转给本机的应用。
-# 有了正式域名后，把下面的 sslip.io 地址换成域名即可，HTTPS 证书会自动签发。
+# 反向代理：对外的 80 / 443 端口转给本机的应用。HTTPS 证书自动签发。
 
+diyimmigration.space {
+	encode gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+# www 跳到主域名
+www.diyimmigration.space {
+	redir https://diyimmigration.space{uri} permanent
+}
+
+# 买域名之前用的地址，先保留
 diy.3-14-73-66.sslip.io {
 	encode gzip
 	reverse_proxy 127.0.0.1:3001
