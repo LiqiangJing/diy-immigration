@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import CiteMap from "./CiteMap";
 import { useAccount } from "@/lib/account";
 import Notable from "@/components/Notable";
 import Soc from "@/components/Soc";
@@ -487,6 +488,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
       </section>
 
       <Notable profile={p} setProfile={setProfile} />
+      <CiteMap profile={p} setProfile={setProfile} />
       </>)}
 
       {tab === "basic" && (

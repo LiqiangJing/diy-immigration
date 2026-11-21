@@ -65,6 +65,16 @@ export type CitationAnalysis = {
 };
 
 /** 贡献总结（Summary of Contributions）：NIW 和 EB-1A 共用的事实底稿 */
+/** 引用地图：引用方作者单位的国家和机构分布（OpenAlex） */
+export type CiteMap = {
+  fetchedAt: number;
+  papers: number; // 统计了申请人的几篇论文
+  citing: number; // 引用这些论文的文章总数
+  selfExcluded: boolean; // 是否排除了申请人本人参与的文章
+  countries: { code: string; name: string; count: number }[];
+  institutions: { name: string; count: number }[];
+};
+
 export type SocProject = {
   id: string;
   title: string;
@@ -118,6 +128,7 @@ export type Profile = {
   primarySource: string; // 主要数字取自哪个来源；手填或没有记录时为空
   analyses: CitationAnalysis[]; // 各篇论文的重要引用分析
   soc: Soc; // 贡献总结
+  citeMap?: CiteMap; // 引用地图
   reviews: string;
   currentPosition: string;
   sameField: "" | "yes" | "no";
