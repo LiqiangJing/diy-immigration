@@ -55,6 +55,11 @@ export default function Soc({ profile: p, setProfile }: Props) {
         <label>
           主要领域
           <input value={p.field} onChange={(e) => setProfile((prev) => ({ ...prev, field: e.target.value, updatedAt: Date.now() }))} placeholder="例如 Trustworthy Artificial Intelligence" />
+          <small>
+            选一个能概括你大部分现有和计划中工作的领域。不要太宽（「工程」「医学」），也不要太窄（只对应某一篇论文的题目）；
+            一般和你的最高学位相近。NIW 申请要和 Proposed Endeavor 对得上；如果在转方向，选一个能同时接住过去成果和未来计划的说法。
+            所有文书里这个领域的写法要保持一致。
+          </small>
         </label>
         <Area
           label="细分方向（最多三个）"
@@ -65,7 +70,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
         />
         <Area
           label="这项工作的重要性、益处和应用"
-          hint="要解决什么问题、为什么重要、对美国有什么意义。引用的政府文件、报告或数据请附上链接。"
+          hint="可以按三层写：要解决什么问题、现在缺什么；谁会受益、会带来什么实际变化；对本领域、对全球、对美国各有什么意义（对应哪些美国政府的优先事项）。重点写你在美国正在做和将要做的工作，用外行能看懂的话。引用的政府文件、报告或数据请附上链接。NIW 的第一项要求（实质价值和国家重要性）主要靠这一段。"
           rows={8}
           value={soc.importance}
           onChange={(importance) => set({ importance })}
@@ -74,7 +79,11 @@ export default function Soc({ profile: p, setProfile }: Props) {
 
       <section className="card">
         <h3>二、主要贡献</h3>
-        <small>选 2–4 个最重要的研究或工作项目。申请信里「原创贡献」一节会按这里的项目逐个展开。</small>
+        <small>
+          选 2–3 个你最拿得出手、证据最充分的项目，优先选被引最多的论文所在的项目；一作、发在好的期刊或会议、有经费支持、被业界采用的也可以。
+          申请信里「原创贡献」一节会按这里的项目逐个展开。NIW 申请的项目要和 Proposed Endeavor 相关；不直接相关的，说明它给了你哪些做后续工作需要的能力。
+          这一步不用上传证据，文书定稿后再按引用到的内容准备。
+        </small>
         {soc.projects.map((x, i) => (
           <div className="soc-project" key={x.id}>
             <div className="soc-project-head">
@@ -99,27 +108,27 @@ export default function Soc({ profile: p, setProfile }: Props) {
             </div>
             <Area
               label="成果"
-              hint="论文（标题、作者、发表在哪）、开源软件或数据集（链接、下载量）、专利、产品等，每行一项。"
+              hint="最多三项最有分量的，每行一项，写得越具体越好：论文写标题、作者、发表的期刊或会议和年份；专利写名称、专利号和年份；开源软件或数据集写链接和下载量。"
               value={x.outputs}
               onChange={(outputs) => setProject(x.id, { outputs })}
             />
             <Area
               label="经费来源（如有）"
-              hint="项目编号、资助机构，以及你和这笔经费的关系（比如 PI 是谁）。"
+              hint="只写有竞争性的外部经费，不写学校或公司内部经费。写资助机构、项目编号和 PI 是谁。之后需要证据把你和这笔经费联系起来，比如你论文致谢里写明了这笔经费。"
               rows={2}
               value={x.funding}
               onChange={(funding) => setProject(x.id, { funding })}
             />
             <Area
               label="工作概述"
-              hint="用外行能看懂的话说：解决了什么问题、你做了什么、为什么是新的。说明你本人在其中的角色。"
+              hint="200 词左右，用外行能看懂的话，按「要解决什么问题 → 你怎么做的 → 结果是什么」写。合作项目先说整体，再用第一人称写清你本人做了什么（I designed… / I led…）。"
               rows={6}
               value={x.summary}
               onChange={(summary) => setProject(x.id, { summary })}
             />
             <Area
               label="意义和影响"
-              hint="别人怎么用了这项工作：被哪些论文采用或扩展、被哪些公司或机构使用、被政府报告引用等。每条写清楚是谁、在哪、怎么用的，附上链接。可以参考「学术记录与引用」里的重要引用分析。"
+              hint="最多三条，每条 75–100 词：是谁、发表在哪、具体怎么用了你的工作，附上链接。最有分量的是独立引用（和你没有共同作者的论文）；其次是被综述引用、被公司或产品采用、被政府报告或白皮书引用、被专利引用、进入课程等。可以直接从「学术记录与引用」里的重要引用分析里挑。实在凑不够三条，就写这项工作对领域、对全球或对美国的意义。"
               rows={8}
               value={x.impact}
               onChange={(impact) => setProject(x.id, { impact })}

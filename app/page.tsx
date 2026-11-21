@@ -199,6 +199,9 @@ export default function Home() {
         )}
 
         <div className="account-box">
+          <a className="contact-link" href="/demo" target="_blank" rel="noreferrer">
+            功能演示
+          </a>
           <button className="contact-link" onClick={() => setContactOpen(true)}>
             联系我们
           </button>

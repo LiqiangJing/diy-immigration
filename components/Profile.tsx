@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAccount } from "@/lib/account";
 import Notable from "@/components/Notable";
 import Soc from "@/components/Soc";
@@ -235,8 +235,14 @@ export default function Profile({ profile: p, setProfile }: Props) {
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
   const [tab, setTab] = useState<"basic" | "scholar" | "soc">("basic");
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const openTab = (t: typeof tab) => {
+    setTab(t);
+    rootRef.current?.scrollTo({ top: 0 });
+  };
+
   return (
-    <div className="cases profile">
+    <div className="cases profile" ref={rootRef}>
       <div className="case-head">
         <div>
           <h2>我的档案</h2>
@@ -247,16 +253,17 @@ export default function Profile({ profile: p, setProfile }: Props) {
         </div>
       </div>
 
-      <div className="tabs" role="tablist">
+      <div className="profile-tabs" role="tablist">
         {(
           [
-            ["basic", "基本资料"],
-            ["scholar", "学术记录与引用"],
-            ["soc", "贡献总结"],
+            ["basic", "基本资料", "姓名、学历、职位和计划"],
+            ["scholar", "学术记录与引用", "Google Scholar、Semantic Scholar、重要引用"],
+            ["soc", "贡献总结", "领域、项目、奖项、审稿等"],
           ] as const
-        ).map(([t, label]) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-            {label}
+        ).map(([t, label, sub]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => openTab(t)}>
+            <strong>{label}</strong>
+            <small>{sub}</small>
           </button>
         ))}
       </div>
@@ -264,13 +271,6 @@ export default function Profile({ profile: p, setProfile }: Props) {
       {tab === "soc" && <Soc profile={p} setProfile={setProfile} />}
 
       {tab === "basic" && (<>
-        <p className="profile-jump">
-          Google Scholar、Semantic Scholar 等学术记录和引用分析在
-          <button className="link" onClick={() => setTab("scholar")}>「学术记录与引用」</button>
-          里填写；项目、奖项、审稿等在
-          <button className="link" onClick={() => setTab("soc")}>「贡献总结」</button>
-          里填写。
-        </p>
       <section className="card">
         <h3>基本信息</h3>
         <div className="grid2">

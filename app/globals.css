@@ -372,11 +372,20 @@ button:disabled { cursor: not-allowed; }
   .chat.compact .messages-inner { padding-top: 16px; }
 }
 
-.profile-jump {
-  margin: 0 0 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--line, #e3e3e3);
-  border-radius: 10px;
-  font-size: 14px;
-  line-height: 1.7;
-}
+/* 我的档案顶部的三个入口：一直停在顶部，往下滚也能切换 */
+.profile-tabs { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px 0; margin-bottom: 8px; background: var(--bg); }
+.profile-tabs button { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.profile-tabs button small { color: var(--muted); font-size: 12px; }
+.profile-tabs button.on { border-color: var(--accent); background: var(--accent-soft); }
+.profile-tabs button.on strong { color: var(--accent); }
+@media (max-width: 640px) { .profile-tabs button small { display: none; } .profile-tabs button { padding: 10px; } }
+
+.demo-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+.demo-compare > div { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.demo-compare > div:last-child { border-color: var(--accent); background: var(--accent-soft); }
+.demo-metrics { display: flex; gap: 12px; width: 100%; }
+.demo-metrics > div { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; }
+.demo-metrics strong { font-size: 22px; }
+.demo .case-head a { text-decoration: none; }
+.demo .candidates button:disabled { opacity: .5; }
+@media (max-width: 640px) { .demo-compare { grid-template-columns: 1fr; } }
