@@ -7,7 +7,7 @@ KEY="${DIY_KEY:-$HOME/.ssh/diy-key.pem}"
 cd "$(dirname "$0")/.."
 
 rsync -az --delete -e "ssh -i $KEY -o BatchMode=yes" \
-  --exclude node_modules --exclude .next --exclude .git --exclude data \
+  --exclude node_modules --exclude .next --exclude .git --exclude /data \
   --exclude '*.pem' --exclude '*.pdf' --exclude '*.docx' --exclude 'IMG_*' --exclude image.png \
   --exclude '.env*.local' --exclude '*.tsbuildinfo' \
   ./ "$HOST:/srv/diy-immigration/"
