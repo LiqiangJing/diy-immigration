@@ -264,6 +264,13 @@ export default function Profile({ profile: p, setProfile }: Props) {
       {tab === "soc" && <Soc profile={p} setProfile={setProfile} />}
 
       {tab === "basic" && (<>
+        <p className="profile-jump">
+          Google Scholar、Semantic Scholar 等学术记录和引用分析在
+          <button className="link" onClick={() => setTab("scholar")}>「学术记录与引用」</button>
+          里填写；项目、奖项、审稿等在
+          <button className="link" onClick={() => setTab("soc")}>「贡献总结」</button>
+          里填写。
+        </p>
       <section className="card">
         <h3>基本信息</h3>
         <div className="grid2">

@@ -371,3 +371,12 @@ button:disabled { cursor: not-allowed; }
   .doc-editor, .doc-preview { padding: 20px 18px; }
   .chat.compact .messages-inner { padding-top: 16px; }
 }
+
+.profile-jump {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line, #e3e3e3);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+}
