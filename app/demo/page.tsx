@@ -103,6 +103,9 @@ export default function Demo() {
               {busy === "search" ? "查找中…" : "按姓名查找"}
             </button>
           </div>
+          {step === 0 && (
+            <small>不想按姓名找的话，也可以直接粘贴自己的 Google Scholar 或 Semantic Scholar 主页链接，几个来源可以同时用。</small>
+          )}
           {step === 1 && (
             <div className="candidates">
               <small>在 Semantic Scholar 里找到以下同名作者，选出本人（演示里请点论文最多的那一位）：</small>
