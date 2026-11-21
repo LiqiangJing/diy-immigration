@@ -6,9 +6,11 @@ import { join } from "node:path";
 
 const g = globalThis as unknown as { __diyDb?: Database.Database };
 
+export const dataDir = () => process.env.DATA_DIR || join(process.cwd(), "data");
+
 export function db(): Database.Database {
   if (g.__diyDb) return g.__diyDb;
-  const dir = process.env.DATA_DIR || join(process.cwd(), "data");
+  const dir = dataDir();
   mkdirSync(dir, { recursive: true });
   const d = new Database(join(dir, "app.db"));
   d.pragma("journal_mode = WAL");
@@ -50,6 +52,23 @@ export function db(): Database.Database {
       message    TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       emailed    INTEGER NOT NULL DEFAULT 0
+    );
+    -- 用户自己的数据（档案、案件、文档、会话），每个 key 一份 JSON。rev 每保存一次加一，用来发现两台设备同时改
+    CREATE TABLE IF NOT EXISTS user_data (
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      rev        INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, key)
+    );
+    -- 用户上传的文件；内容放在磁盘上 DATA_DIR/files/<用户>/<文件 id>
+    CREATE TABLE IF NOT EXISTS user_files (
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      file_id    TEXT NOT NULL,
+      size       INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, file_id)
     );
     -- 支付宝订单
     CREATE TABLE IF NOT EXISTS orders (

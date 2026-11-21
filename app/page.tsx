@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Chat from "@/components/Chat";
 import Cases, { caseLibrary, caseLine } from "@/components/Cases";
 import Profile from "@/components/Profile";
@@ -11,6 +11,9 @@ import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
 import { citationReport, emptyProfile, normalizeProfile, notableReport, profileToText, socReport } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
+import { setRemoteFiles } from "@/lib/files";
+import { fetchAll, fileIds, isEmpty, loadMeta, merge, pushOne, saveMeta, SYNC_KEYS, uploadMissingFiles } from "@/lib/sync";
+import type { SyncKey, SyncMeta } from "@/lib/sync";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
 const CONV_KEY = "pathway.conversations";
@@ -113,6 +116,147 @@ export default function Home() {
     if (loaded) save(DOCS_KEY, docs);
   }, [docs, loaded]);
 
+  // ---- 登录后把数据同步到服务器（浏览器里仍保留一份）----
+  const [syncState, setSyncState] = useState<"off" | "syncing" | "ok" | "error">("off");
+  const current: Record<SyncKey, unknown> = { conversations: convs, cases, profile, docs };
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  const metaRef = useRef<SyncMeta | null>(null);
+  const sentRef = useRef<Partial<Record<SyncKey, string>>>({}); // 每份数据上次和服务器对齐时的内容
+  const [syncReady, setSyncReady] = useState(false);
+  const timers = useRef<Partial<Record<SyncKey, ReturnType<typeof setTimeout>>>>({});
+  const email = me?.user?.email ?? "";
+
+  const applyKey = useCallback((key: SyncKey, value: unknown) => {
+    if (key === "conversations") setConvs(Array.isArray(value) ? (value as Conversation[]) : []);
+    else if (key === "cases") setCases(Array.isArray(value) ? (value as ImmigrationCase[]) : []);
+    else if (key === "docs") setDocs(Array.isArray(value) ? (value as DocFile[]) : []);
+    else setProfile(normalizeProfile((value ?? {}) as Record<string, unknown>));
+  }, []);
+
+  const pushKey = useCallback(
+    async (key: SyncKey) => {
+      const meta = metaRef.current;
+      if (!meta) return;
+      const json = JSON.stringify(currentRef.current[key]);
+      if (json === sentRef.current[key]) return;
+      setSyncState("syncing");
+      const r = await pushOne(key, json, meta.revs[key] ?? 0);
+      if (metaRef.current !== meta) return; // 期间换了账号
+      if (r.ok) {
+        meta.revs[key] = r.rev;
+        sentRef.current[key] = json;
+        // 上传期间又有新改动的话，下面的 effect 会再排一次
+        meta.dirty[key] = JSON.stringify(currentRef.current[key]) !== json;
+        saveMeta(meta);
+        setSyncState(SYNC_KEYS.some((k) => meta.dirty[k]) ? "syncing" : "ok");
+      } else if (r.conflict) {
+        // 别的设备先保存了：合并后以服务器的版本号再传一次
+        let theirs: unknown = null;
+        try {
+          theirs = r.conflict.value ? JSON.parse(r.conflict.value) : null;
+        } catch {}
+        meta.revs[key] = r.conflict.rev;
+        sentRef.current[key] = r.conflict.value;
+        saveMeta(meta);
+        applyKey(key, merge(key, currentRef.current[key], theirs));
+      } else {
+        setSyncState("error");
+        clearTimeout(timers.current[key]);
+        timers.current[key] = setTimeout(() => pushKey(key), 20_000);
+      }
+    },
+    [applyKey],
+  );
+
+  // 登录（或刷新页面后恢复登录）时，先和服务器对齐一次
+  useEffect(() => {
+    if (!loaded || !email) {
+      metaRef.current = null;
+      setSyncReady(false);
+      setSyncState("off");
+      setRemoteFiles(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setSyncState("syncing");
+      const server = await fetchAll();
+      if (cancelled) return;
+      if (!server) {
+        setSyncState("error");
+        return;
+      }
+      const old = loadMeta();
+      const sameUser = old?.user === email;
+      // 本地数据上次属于另一个账号：不能混进这个账号，直接换成这个账号在服务器上的数据
+      const foreign = Boolean(old) && !sameUser;
+      const meta: SyncMeta = { user: email, revs: {}, dirty: {} };
+      const sent: Partial<Record<SyncKey, string>> = {};
+      for (const key of SYNC_KEYS) {
+        const local = currentRef.current[key];
+        const s = server[key];
+        let theirs: unknown = null;
+        try {
+          theirs = s?.value ? JSON.parse(s.value) : null;
+        } catch {}
+        meta.revs[key] = s?.rev ?? 0;
+        sent[key] = s?.value ?? "";
+        if (foreign) {
+          applyKey(key, theirs);
+        } else if (!s) {
+          meta.dirty[key] = !isEmpty(key, local); // 服务器上还没有：把本地的传上去
+          if (!meta.dirty[key]) sent[key] = JSON.stringify(local);
+        } else if (sameUser && old.revs[key] === s.rev) {
+          // 服务器没变，本地的就是最新的；本地和服务器内容不同的话（比如退出登录期间改过），下面的 effect 会发现并上传
+          meta.dirty[key] = Boolean(old.dirty[key]);
+        } else if (sameUser && !old.dirty[key]) {
+          applyKey(key, theirs); // 别的设备改过，本地没有未上传的改动：用服务器的
+        } else {
+          applyKey(key, merge(key, local, theirs)); // 两边都改过，或者是登录前就在这个浏览器里填的内容
+          meta.dirty[key] = true;
+        }
+      }
+      metaRef.current = meta;
+      sentRef.current = sent;
+      saveMeta(meta);
+      setRemoteFiles(true);
+      setSyncReady(true);
+      setSyncState("ok");
+      // 以前只存在这个浏览器里的文件，补传到服务器
+      setTimeout(() => {
+        if (!cancelled) uploadMissingFiles(fileIds(currentRef.current.cases, currentRef.current.conversations));
+      }, 3000);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded, email, applyKey]);
+
+  // 之后每次改动，停手两秒后保存到服务器
+  useEffect(() => {
+    const meta = metaRef.current;
+    if (!syncReady || !meta) return;
+    for (const key of SYNC_KEYS) {
+      const json = JSON.stringify(currentRef.current[key]);
+      // 从服务器取回来的内容经过补齐字段后，文字上可能和原样不同但意思一样；只有真的不同才算改动
+      if (json === sentRef.current[key]) {
+        if (meta.dirty[key]) {
+          meta.dirty[key] = false;
+          saveMeta(meta);
+          if (!SYNC_KEYS.some((k) => meta.dirty[k])) setSyncState("ok");
+        }
+        continue;
+      }
+      if (!meta.dirty[key]) {
+        meta.dirty[key] = true;
+        saveMeta(meta);
+      }
+      clearTimeout(timers.current[key]);
+      timers.current[key] = setTimeout(() => pushKey(key), 2000);
+    }
+  }, [convs, cases, profile, docs, syncReady, pushKey]);
+
   const patchConv = useCallback(
     (id: string, fn: (c: Conversation) => Conversation) =>
       setConvs((list) => list.map((c) => (c.id === id ? fn(c) : c))),
@@ -210,6 +354,17 @@ export default function Home() {
               <span className="account-email">{me.user.email}</span>
               <span className="account-credits">{me.user.credits} credits · 充值</span>
             </button>
+          ) : null}
+          {me?.user ? (
+            <span className={`sync-state ${syncState}`}>
+              {syncState === "ok"
+                ? "数据已保存到云端"
+                : syncState === "syncing"
+                  ? "正在保存到云端…"
+                  : syncState === "error"
+                    ? "云端保存失败，稍后自动重试（内容仍在本浏览器里）"
+                    : ""}
+            </span>
           ) : (
             <button onClick={() => setAuthOpen(true)}>
               <span className="account-email">登录 / 注册</span>

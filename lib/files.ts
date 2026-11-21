@@ -33,7 +33,48 @@ function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
   );
 }
 
-export async function putFile(id: string, data: string) {
+// 登录后文件同时存一份到服务器（见 lib/sync.ts），换设备或清缓存后能取回
+let remote = false;
+export const setRemoteFiles = (on: boolean) => {
+  remote = on;
+};
+
+function toBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function fromBytes(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** 把一个文件传到服务器；失败不影响本地使用，下次同步时会再试 */
+export async function uploadFile(id: string, data: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/files/${id}`, { method: "PUT", body: new Blob([toBytes(data)]) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function localGet(id: string): Promise<string | undefined> {
+  const hit = mem.get(id);
+  if (hit !== undefined) return hit;
+  try {
+    const data = await run<string | undefined>("readonly", (s) => s.get(id));
+    if (typeof data === "string") mem.set(id, data);
+    return typeof data === "string" ? data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function localPut(id: string, data: string) {
   mem.set(id, data);
   try {
     await run("readwrite", (s) => s.put(data, id));
@@ -42,12 +83,24 @@ export async function putFile(id: string, data: string) {
   }
 }
 
+export async function putFile(id: string, data: string) {
+  await localPut(id, data);
+  if (remote) void uploadFile(id, data);
+}
+
+/** 这个文件在当前浏览器里有没有 */
+export const hasLocalFile = async (id: string) => (await localGet(id)) !== undefined;
+export const getLocalFile = localGet;
+
 export async function getFile(id: string): Promise<string | undefined> {
-  const hit = mem.get(id);
-  if (hit !== undefined) return hit;
+  const local = await localGet(id);
+  if (local !== undefined || !remote) return local;
+  // 当前浏览器里没有（换了设备或清过缓存），从服务器取回并存一份
   try {
-    const data = await run<string | undefined>("readonly", (s) => s.get(id));
-    if (typeof data === "string") mem.set(id, data);
+    const res = await fetch(`/api/files/${id}`);
+    if (!res.ok) return undefined;
+    const data = fromBytes(new Uint8Array(await res.arrayBuffer()));
+    await localPut(id, data);
     return data;
   } catch {
     return undefined;
@@ -59,6 +112,7 @@ export async function dropFile(id: string) {
   try {
     await run("readwrite", (s) => s.delete(id));
   } catch {}
+  if (remote) fetch(`/api/files/${id}`, { method: "DELETE" }).catch(() => {});
 }
 
 function mimeOf(f: File): string | null {
