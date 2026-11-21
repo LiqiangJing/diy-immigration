@@ -2,7 +2,7 @@
 # 把当前代码发布到服务器：同步代码 → 安装依赖 → 构建 → 重启。
 # 用法：deploy/deploy.sh [服务器地址]    密钥默认 ~/.ssh/diy-key.pem
 set -e
-HOST="${1:-ubuntu@3.14.73.66}"
+HOST="${1:-ubuntu@18.118.124.44}"
 KEY="${DIY_KEY:-$HOME/.ssh/diy-key.pem}"
 cd "$(dirname "$0")/.."
 

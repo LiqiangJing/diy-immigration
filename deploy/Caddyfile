@@ -10,12 +10,6 @@ www.diyimmigration.space {
 	redir https://diyimmigration.space{uri} permanent
 }
 
-# 买域名之前用的地址，先保留
-diy.3-14-73-66.sslip.io {
-	encode gzip
-	reverse_proxy 127.0.0.1:3001
-}
-
 # 直接用 IP 访问（没有 HTTPS）
 :80 {
 	encode gzip
