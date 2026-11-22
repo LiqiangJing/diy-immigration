@@ -3,9 +3,79 @@
 import { useState } from "react";
 import { useAccount } from "@/lib/account";
 
+/** 设置或修改登录密码（可选；不设就一直用邮箱验证码登录） */
+function Password({ has, onSaved }: { has: boolean; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (pw !== pw2) return setMsg("两次输入的密码不一样。");
+    setBusy(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "保存失败，请稍后再试。");
+      setPw("");
+      setPw2("");
+      setOpen(false);
+      setMsg("密码已保存，下次可以用邮箱和密码登录。");
+      onSaved();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "保存失败，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <h3>登录密码</h3>
+      <small>
+        {has
+          ? "已设置密码，可以用邮箱和密码登录。忘记密码时用邮箱验证码登录，再到这里重设。"
+          : "还没有设置密码，目前每次都用邮箱验证码登录。设一个密码后，收不到验证码邮件时也能登录。"}
+      </small>
+      {open ? (
+        <form onSubmit={save}>
+          <label>
+            新密码（至少 8 位）
+            <input type="password" required minLength={8} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
+          </label>
+          <label>
+            再输入一次
+            <input type="password" required minLength={8} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
+          </label>
+          <div className="form-actions">
+            <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
+              取消
+            </button>
+            <button type="submit" className="btn-accent" disabled={busy}>
+              {busy ? "请稍候…" : "保存密码"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="btn-ghost" onClick={() => (setOpen(true), setMsg(""))}>
+          {has ? "修改密码" : "设置密码"}
+        </button>
+      )}
+      {msg && <div className="notice">{msg}</div>}
+    </section>
+  );
+}
+
 /** 账户页：余额、充值、credit 流水 */
 export default function Account({ onLogin, onLogout }: { onLogin: () => void; onLogout: () => void }) {
-  const { me } = useAccount();
+  const { me, refresh } = useAccount();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [method, setMethod] = useState<"alipay" | "stripe" | null>(null);
@@ -96,6 +166,8 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
       </div>
       {!active && <div className="notice">充值功能还没有开通。</div>}
       {error && <div className="notice">{error}</div>}
+
+      <Password has={me.user.hasPassword} onSaved={refresh} />
 
       <h3 className="section-title">最近的 credit 记录</h3>
       {me.history.length === 0 ? (

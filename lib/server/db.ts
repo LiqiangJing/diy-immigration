@@ -81,6 +81,15 @@ export function db(): Database.Database {
       paid_at    INTEGER
     );
   `);
+  // 密码登录是后加的：老数据库里补上这几列
+  const cols = (d.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes("password_hash")) {
+    d.exec(`
+      ALTER TABLE users ADD COLUMN password_hash TEXT;
+      ALTER TABLE users ADD COLUMN pw_fails INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN pw_locked_until INTEGER NOT NULL DEFAULT 0;
+    `);
+  }
   g.__diyDb = d;
   return d;
 }

@@ -3,7 +3,7 @@
 import { createContext, useContext } from "react";
 
 export type Me = {
-  user: { email: string; credits: number } | null;
+  user: { email: string; credits: number; hasPassword: boolean } | null;
   history: { delta: number; reason: string; at: number }[];
   packs: { id: string; usd: number; cny: number; credits: number }[];
   scholarCost: number;

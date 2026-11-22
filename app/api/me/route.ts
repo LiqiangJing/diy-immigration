@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const user = getUser(req);
   return Response.json(
     {
-      user: user && { email: user.email, credits: user.credits },
+      user: user && { email: user.email, credits: user.credits, hasPassword: user.hasPassword },
       history: user ? history(user.id) : [],
       packs: PACKS,
       scholarCost: SCHOLAR_COST,

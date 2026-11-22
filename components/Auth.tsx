@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/** 邮箱验证码登录弹窗；新邮箱会自动注册 */
+/** 登录弹窗：邮箱验证码（新邮箱会自动注册），或者邮箱 + 自己设过的密码 */
 export default function Auth({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -10,6 +10,8 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [devCode, setDevCode] = useState("");
+  const [mode, setMode] = useState<"code" | "password">("code");
+  const [password, setPassword] = useState("");
 
   async function post(url: string, body: unknown) {
     const res = await fetch(url, {
@@ -27,7 +29,10 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
     setBusy(true);
     setError("");
     try {
-      if (step === "email") {
+      if (mode === "password") {
+        await post("/api/auth/login", { email, password });
+        onDone();
+      } else if (step === "email") {
         const data = await post("/api/auth/request", { email });
         setDevCode(data.devCode ?? "");
         setStep("code");
@@ -46,9 +51,33 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
     <div className="modal-scrim" onClick={onClose}>
       <form className="modal" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
         <h3>登录 / 注册</h3>
-        {step === "email" ? (
+        {mode === "password" ? (
           <>
-            <p>输入邮箱，我们会发一个 6 位验证码。第一次登录会自动注册。</p>
+            <p>
+              用邮箱和你设过的密码登录。还没注册、没设过密码或忘记密码的话，
+              <button type="button" className="link" onClick={() => (setMode("code"), setStep("email"), setError(""))}>
+                用验证码登录
+              </button>
+              ，登录后可以在「账户」里设置密码。
+            </p>
+            <label>
+              邮箱
+              <input type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="username" />
+            </label>
+            <label>
+              密码
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+            </label>
+          </>
+        ) : step === "email" ? (
+          <>
+            <p>
+              输入邮箱，我们会发一个 6 位验证码。第一次登录会自动注册。设过密码的话也可以
+              <button type="button" className="link" onClick={() => (setMode("password"), setError(""))}>
+                用密码登录
+              </button>
+              。
+            </p>
             <p className="legal-agree">
               登录或注册即表示你同意
               <a href="/terms" target="_blank" rel="noreferrer">服务条款</a>和
@@ -101,7 +130,7 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
             取消
           </button>
           <button type="submit" className="btn-accent" disabled={busy}>
-            {busy ? "请稍候…" : step === "email" ? "发送验证码" : "登录"}
+            {busy ? "请稍候…" : mode === "code" && step === "email" ? "发送验证码" : "登录"}
           </button>
         </div>
       </form>

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 import { db } from "./db";
 import { grantSignupBonus } from "./credits";
 import { mailConfigured, sendMail } from "./mail";
@@ -11,7 +11,7 @@ const RESEND_AFTER = 60_000;
 const MAX_ATTEMPTS = 5;
 const SESSION_TTL = 30 * 24 * 3600_000;
 
-export type User = { id: string; email: string; credits: number };
+export type User = { id: string; email: string; credits: number; hasPassword: boolean };
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -77,13 +77,65 @@ export function verifyCode(email: string, code: string): { token: string } | { e
     d.prepare("INSERT INTO users (id, email, credits, created_at) VALUES (?, ?, 0, ?)").run(user.id, email, Date.now());
     grantSignupBonus(user.id);
   }
+  return { token: newSession(user.id) };
+}
+
+function newSession(userId: string): string {
   const token = randomBytes(32).toString("hex");
-  d.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
-    sha(token),
-    user.id,
-    Date.now() + SESSION_TTL,
-  );
-  return { token };
+  db()
+    .prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+    .run(sha(token), userId, Date.now() + SESSION_TTL);
+  return token;
+}
+
+/* ---------- 密码（可选）：用验证码注册后可以设一个，之后用邮箱 + 密码登录；忘了就用验证码登录再重设 ---------- */
+
+export const PW_MIN = 8;
+const PW_MAX = 200;
+const PW_MAX_FAILS = 5;
+const PW_LOCK = 15 * 60_000;
+
+function hashPassword(pw: string, salt = randomBytes(16).toString("hex")): string {
+  return `scrypt$${salt}$${scryptSync(pw, salt, 32).toString("hex")}`;
+}
+
+function checkPassword(pw: string, stored: string): boolean {
+  const [kind, salt] = stored.split("$");
+  return kind === "scrypt" && Boolean(salt) && same(hashPassword(pw, salt), stored);
+}
+
+/** 设置或修改密码。为了让被别人拿到的旧登录失效，除当前这个之外的登录状态都会退出。 */
+export function setPassword(req: Request, userId: string, pw: string): { ok: true } | { error: string } {
+  if (pw.length < PW_MIN) return { error: `密码至少 ${PW_MIN} 位。` };
+  if (pw.length > PW_MAX) return { error: "密码太长了。" };
+  const d = db();
+  d.prepare("UPDATE users SET password_hash = ?, pw_fails = 0, pw_locked_until = 0 WHERE id = ?").run(hashPassword(pw), userId);
+  d.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").run(userId, sha(tokenFrom(req) ?? ""));
+  return { ok: true };
+}
+
+/** 邮箱 + 密码登录。连续输错几次会锁一段时间；不区分「没有这个账号」「没设密码」「密码不对」，免得被人用来试探邮箱。 */
+export function loginWithPassword(email: string, pw: string): { token: string } | { error: string } {
+  const d = db();
+  const u = d.prepare("SELECT id, password_hash, pw_fails, pw_locked_until FROM users WHERE email = ?").get(email) as
+    | { id: string; password_hash: string | null; pw_fails: number; pw_locked_until: number }
+    | undefined;
+  const wrong = { error: "邮箱或密码不对。没设过密码或忘记了的话，请改用验证码登录。" };
+  if (u && u.pw_locked_until > Date.now()) return { error: "密码输错次数太多，请 15 分钟后再试，或改用验证码登录。" };
+  if (!u || !u.password_hash || pw.length > PW_MAX || !checkPassword(pw, u.password_hash)) {
+    if (!u) hashPassword(pw); // 让「账号不存在」和「密码不对」花的时间差不多
+    if (u?.password_hash) {
+      const fails = u.pw_fails + 1;
+      d.prepare("UPDATE users SET pw_fails = ?, pw_locked_until = ? WHERE id = ?").run(
+        fails >= PW_MAX_FAILS ? 0 : fails,
+        fails >= PW_MAX_FAILS ? Date.now() + PW_LOCK : 0,
+        u.id,
+      );
+    }
+    return wrong;
+  }
+  d.prepare("UPDATE users SET pw_fails = 0, pw_locked_until = 0 WHERE id = ?").run(u.id);
+  return { token: newSession(u.id) };
 }
 
 function tokenFrom(req: Request): string | null {
@@ -96,11 +148,12 @@ export function getUser(req: Request): User | null {
   if (!token) return null;
   const row = db()
     .prepare(
-      `SELECT u.id, u.email, u.credits FROM sessions s JOIN users u ON u.id = s.user_id
+      `SELECT u.id, u.email, u.credits, u.password_hash IS NOT NULL AS hasPassword
+       FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
-    .get(sha(token), Date.now()) as User | undefined;
-  return row ?? null;
+    .get(sha(token), Date.now()) as (Omit<User, "hasPassword"> & { hasPassword: number }) | undefined;
+  return row ? { ...row, hasPassword: Boolean(row.hasPassword) } : null;
 }
 
 export function logout(req: Request) {
