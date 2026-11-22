@@ -239,7 +239,7 @@ export function profileToText(p: Profile): string {
   add("研究 / 工作领域", p.field);
   p.degrees.forEach((d) => add("已获学位", deg(d, "授予年份")));
   if (p.enrolled) add("在读学位", deg(p.enrolled, "预计毕业"));
-  add("当前在美职位", p.currentPosition);
+  add("当前职位", p.currentPosition);
   add("Google Scholar 主页", p.scholarUrl);
   add("Semantic Scholar 主页", p.s2Url);
   const main = primaryRecord(p);

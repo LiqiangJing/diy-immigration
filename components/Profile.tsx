@@ -314,7 +314,8 @@ export default function Profile({ profile: p, setProfile }: Props) {
           + 添加学位
         </button>
 
-        <h4>在读的高等学位</h4>
+        <h4>在读的高等学位（没有就跳过）</h4>
+        <small>只有目前还在读硕士或博士的人需要填。已经毕业、在工作或做博士后的不用填这一项，在下面「工作与未来计划」的「当前职位」里写你的工作。</small>
         {p.enrolled ? (
           <DegreeFields enrolled d={p.enrolled} onChange={(enrolled) => set({ enrolled })} onRemove={() => set({ enrolled: null })} />
         ) : (
@@ -496,8 +497,12 @@ export default function Profile({ profile: p, setProfile }: Props) {
       <section className="card">
         <h3>工作与未来计划</h3>
         <label>
-          当前在美职位
-          <small>用英文填写，如 PhD student at University of California, CA；Software Engineer at Amazon, WA。不在美国或待业填 N/A。</small>
+          当前职位
+          <small>
+            用英文填写职位和单位，学生、博士后、教职、公司职员、创业都可以，如 PhD student at University of California, CA；Postdoctoral
+            Researcher at Stanford University, CA；Software Engineer at Amazon, WA。不在美国的照实填并写上国家，如 Research Scientist at
+            Tsinghua University, China。目前没有工作填 N/A。
+          </small>
           <input value={p.currentPosition} onChange={(e) => set({ currentPosition: e.target.value })} />
         </label>
 
