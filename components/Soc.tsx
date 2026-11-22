@@ -3,6 +3,7 @@
 import { emptySoc } from "@/lib/profile";
 import type { Profile as ProfileData, Soc as SocData, SocProject, SocReview } from "@/lib/profile";
 import { uid } from "@/lib/types";
+import { CET, CET_SOURCE } from "@/lib/cet";
 
 type Props = {
   profile: ProfileData;
@@ -63,11 +64,53 @@ export default function Soc({ profile: p, setProfile }: Props) {
         </label>
         <Area
           label="细分方向（最多三个）"
-          hint="每行一个。如果你的方向属于美国「关键和新兴技术」（Critical and Emerging Technologies）清单里的类别，按清单上的说法写。"
+          hint="每行一个，用英文。从上面的主要领域往下拆：你大部分已有成果和接下来计划做的工作，具体落在哪一到三个方向上。可以是工作的性质，也可以是你区别于同行的专长。这几个说法会在申请信和推荐信里反复出现，用来说明你的专长是什么，所以要和你已有的成果对得上；NIW 申请还要和 Proposed Endeavor 对得上。"
           rows={3}
           value={soc.subareas}
           onChange={(subareas) => set({ subareas })}
+          placeholder={"CET category: Adversarial robustness and AI security\nCET category: Foundation models, including large language, multimodal, and world systems"}
         />
+        <details className="pubs cet">
+          <summary>
+            对照美国「关键和新兴技术」清单来选<span> 对得上的话优先用清单上的说法</span>
+          </summary>
+          <small>
+            这份清单（Critical and Emerging Technologies，简称 CET）是白宫科技政策办公室发布的，列出美国政府认定对国家安全和经济竞争力最关键的技术，目前共
+            14 个大类。你的方向在清单上，论证「对美国重要」时就有一份现成的政府文件可以引用。出处：
+            <a href={CET_SOURCE.url} target="_blank" rel="noreferrer">
+              {CET_SOURCE.title}
+            </a>
+            ，{CET_SOURCE.pages}。下面是原文照录，点一下就加到上面的框里。
+          </small>
+          <small>
+            怎么判断自己属不属于：看你已经发表的成果里，有没有直接做这件事的论文、专利或产品，能拿出来当证据。只是沾边、或者只是打算以后做的，不算。
+            子项只是官方举的例子，没有列全；你的工作属于某个大类但对不上任何子项时，直接点大类的名字。完全对不上也没关系，照实写自己的细分方向，不要硬套，
+            硬套的说法和成果对不上反而减分。对上清单不等于一定获批，它只是让重要性更好论证。
+          </small>
+          {CET.map((c) => {
+            const lines = soc.subareas.split("\n").map((s) => s.trim()).filter(Boolean);
+            const add = (name: string) => {
+              const line = `CET category: ${name}`;
+              if (!lines.includes(line)) set({ subareas: [...lines, line].join("\n") });
+            };
+            const picked = (name: string) => lines.includes(`CET category: ${name}`);
+            return (
+              <div className="cet-area" key={c.area}>
+                <button className={picked(c.area) ? "on" : ""} disabled={picked(c.area) || lines.length >= 3} onClick={() => add(c.area)}>
+                  <strong>{c.area}</strong> {c.zh}
+                </button>
+                <div>
+                  {c.subs.map((s) => (
+                    <button key={s} className={picked(s) ? "on" : ""} disabled={picked(s) || lines.length >= 3} onClick={() => add(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <small>已经有三行时不能再加，先在上面的框里删掉一行。</small>
+        </details>
         <Area
           label="这项工作的重要性、益处和应用"
           hint="可以按三层写：要解决什么问题、现在缺什么；谁会受益、会带来什么实际变化；对本领域、对全球、对美国各有什么意义（对应哪些美国政府的优先事项）。重点写你在美国正在做和将要做的工作，用外行能看懂的话。引用的政府文件、报告或数据请附上链接。NIW 的第一项要求（实质价值和国家重要性）主要靠这一段。"

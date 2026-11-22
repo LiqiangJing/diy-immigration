@@ -412,3 +412,14 @@ button:disabled { cursor: not-allowed; }
 .legal-links a { color: var(--muted); }
 .modal p.legal-agree { font-size: 12px; }
 .legal-agree a { color: var(--accent); }
+
+/* 贡献总结里的「关键和新兴技术」清单 */
+.cet > small { display: block; margin: 6px 0; }
+.cet-area { margin: 10px 0; }
+.cet-area > button { display: block; text-align: left; font-size: 13.5px; padding: 2px 0; }
+.cet-area > button strong { font-weight: 600; }
+.cet-area > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cet-area > div button { text-align: left; font-size: 12.5px; line-height: 1.35; padding: 3px 8px; border: 1px solid var(--line, #ddd); border-radius: 8px; background: transparent; max-width: 100%; }
+.cet-area button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.cet-area button:disabled { opacity: 0.5; cursor: default; }
+.cet-area button.on { opacity: 1; color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
