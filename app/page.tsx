@@ -393,6 +393,15 @@ export default function Home() {
             firstName={(profile.chineseName || profile.firstName).trim()}
             library={linkedCase ? caseLibrary(linkedCase, docs) : undefined}
             contextLine={linkedCase ? caseLine(linkedCase) : undefined}
+            ops={{
+              profile,
+              cases,
+              linkedCaseId: linkedCase?.id ?? null,
+              commit: (r) => {
+                if (r.profile) setProfile(r.profile);
+                if (r.cases) setCases(r.cases);
+              },
+            }}
             caseLink={{
               cases,
               value: linkedCase?.id ?? null,

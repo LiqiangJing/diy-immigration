@@ -10,6 +10,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   attachments?: Attachment[];
+  actions?: import("./actions").ActionItem[]; // AI 提出的操作（填档案、建案件、存文件），用户确认后才生效
 };
 
 export type Conversation = {

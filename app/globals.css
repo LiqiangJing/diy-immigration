@@ -423,3 +423,16 @@ button:disabled { cursor: not-allowed; }
 .cet-area button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .cet-area button:disabled { opacity: 0.5; cursor: default; }
 .cet-area button.on { opacity: 1; color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+/* 聊天里 AI 提出的操作：确认卡片 */
+.actions { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; align-items: flex-start; }
+.action-card { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; font-size: 14px; }
+.action-card.applied { border-color: var(--accent); background: var(--accent-soft); }
+.action-card.skipped { opacity: 0.55; }
+.action-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.action-row { display: grid; grid-template-columns: 9.5em 1fr; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.action-row > span { color: var(--muted); font-size: 13px; }
+.action-row > div { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
+.action-row small { display: block; color: var(--danger); margin-top: 4px; font-size: 12.5px; }
+.action-card .form-actions { margin-top: 10px; }
+@media (max-width: 640px) { .action-row { grid-template-columns: 1fr; gap: 2px; } }

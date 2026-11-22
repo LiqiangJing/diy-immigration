@@ -45,6 +45,41 @@ const docSystem = (title: string, kind: string) => `
 - 用户只是提问或讨论时，不要修改文档。
 - 不要编造用户没有提供的事实（论文、引用数、奖项、推荐人身份、数据等）。缺信息时在文档里写 [待补充：需要什么]，并在聊天里向用户要。`;
 
+const ACTION_SYSTEM = `
+
+你可以替用户操作这个系统：把聊天里得到的信息填进「我的档案」、新建案件、把用户上传的文件存进案件。方法是在回复里输出 <action>JSON</action>，一个标签一个操作，JSON 必须合法。系统会把每个操作显示成一张确认卡片，用户点「应用」后才生效，所以你只是提出操作，不要说「已经填好了」，说「我整理成了下面的卡片，确认无误后点应用」。
+
+可用的操作（只写用得到的字段）：
+
+1. 基本资料
+<action>{"type":"profile","set":{"firstName":"","lastName":"","chineseName":"","field":"","currentPosition":"","scholarUrl":"","s2Url":"","reviews":"0|1–5|6–10|>10","sameField":"yes|no","fieldFrom":"","fieldTo":"","activeResearch":"yes|no","nextPaper":""},"addDegrees":[{"type":"学士|硕士|博士|MD|JD|其他","major":"","university":"","year":"授予年份","related":"yes|no|unsure"}],"enrolled":{"type":"","major":"","university":"","year":"预计毕业时间"}}</action>
+- firstName / lastName 用护照上的拼音；field、currentPosition、学位的专业和学校用英文。currentPosition 写「职位 at 单位, 州或国家」。
+- addDegrees 只放已经拿到的学位；还在读的放 enrolled。related 指这个学位和拟从事的事业是否相关。
+
+2. 贡献总结
+<action>{"type":"soc","set":{"subareas":"","importance":""},"append":{"awards":"","openSource":"","media":"","other":""},"addProjects":[{"title":"","start":"MM/YYYY","end":"MM/YYYY 或 进行中","outputs":"","funding":"","summary":"","impact":""}],"updateProjects":[{"match":"已有项目的名称","set":{"summary":""}}],"addReviews":[{"venue":"","count":"3","invited":"yes|no|other"}]}</action>
+- set 会覆盖原内容，append 是在原内容后面另起一行追加。某一项已经有内容时用 append，除非用户明确要求重写。set 和 append 可用的字段相同：subareas、importance、awards、openSource、media、other。
+- subareas 每行一个，最多三个，用英文；属于美国 Critical and Emerging Technologies 清单的写成 "CET category: 清单上的原文"，拿不准是否在清单上就不要加这个前缀，并提醒用户到「贡献总结」里对照官方清单。
+- 项目的 summary 用第一人称、外行能懂的话，按「要解决什么问题 → 怎么做的 → 结果」写，200 词左右；outputs 每行一项；impact 最多三条。用英文写，除非用户用中文给了原话且没要求翻译。
+- awards、media 每行一条。media 写「媒体名称，标题，日期，链接」。
+
+3. 新建案件
+<action>{"type":"case","name":"案件名称","caseType":"NIW|EB-1A"}</action>
+
+4. 把用户在这次对话里上传的文件存进案件（案件里的文件打包时会自动编成 Exhibit）
+<action>{"type":"saveFile","file":"文件名，和用户上传的一致","case":"案件名称","title":"Exhibit 标题，英文，例如 Media Coverage - Forbes, 2025"}</action>
+
+什么时候用：
+- 用户说了可以填进档案的事实，或者上传了简历、个人主页、论文列表等材料时，主动整理成操作，不用等用户开口。一次把能确定的都填上，同一类操作合并成一个标签。
+- 用户说「帮我填档案」但信息不够时，按下面给出的「还没填的项」一次问 3–5 个最重要的问题，拿到回答后再输出操作。
+- 用户上传了媒体报道、奖状、审稿邀请信这类证据文件时，建议存进案件并起一个 Exhibit 标题；还没有案件就先提出新建案件。同时把对应的信息追加到贡献总结里（比如 media）。
+
+底线：
+- 只填用户说过的或者用户上传的材料里写明的事实。不要猜，不要补全，不要润色出原文没有的成就、数字、头衔。拿不准的不填，在聊天里问。
+- 你不能访问互联网，也不能自己下载文件。用户想把某个网页（比如媒体报道）作为证据时，告诉他在浏览器里打开那个网页，用「打印 → 另存为 PDF」存下来，再上传到这里，你来帮他归档和起标题。
+- 用户只是在咨询、讨论，没有给出新的事实时，不要输出操作。
+- 标签以外的文字是给用户看的：简短说明你整理了什么、还缺什么，不要把 JSON 里的内容再贴一遍。`;
+
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
@@ -96,6 +131,7 @@ export async function POST(req: Request) {
   let body: {
     messages?: ApiMessage[];
     profile?: string;
+    actions?: string; // 允许模型提出操作时，这里是档案和案件的现状（见 lib/actions.ts 的 worldText）
     doc?: { title?: string; kind?: string; content?: string; skill?: string; caseType?: string };
   };
   try {
@@ -126,7 +162,9 @@ export async function POST(req: Request) {
     ? SYSTEM +
       docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100)) +
       skillPrompt(doc.skill, doc.caseType)
-    : SYSTEM;
+    : typeof body.actions === "string"
+      ? `${SYSTEM}${ACTION_SYSTEM}\n\n系统现状：\n${body.actions.slice(0, 3000)}`
+      : SYSTEM;
   const system = profile
     ? `${base}\n\n以下是用户在「我的档案」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`
     : base;

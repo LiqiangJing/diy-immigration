@@ -8,6 +8,18 @@ import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/ty
 import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
 import { useAccount } from "@/lib/account";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
+import { apply, describe, parseActions, stripActions, worldText } from "@/lib/actions";
+import type { ActionItem, World } from "@/lib/actions";
+import type { Profile } from "@/lib/profile";
+import type { ImmigrationCase } from "@/lib/types";
+
+/** 让聊天可以替用户操作系统（填档案、建案件、存文件）；每个操作都要用户确认 */
+export type Ops = {
+  profile: Profile;
+  cases: ImmigrationCase[];
+  linkedCaseId: string | null;
+  commit: (r: { profile?: Profile; cases?: ImmigrationCase[] }) => void;
+};
 
 /** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
 export type DocContext = {
@@ -21,6 +33,7 @@ export type DocContext = {
 };
 
 const SUGGESTIONS = [
+  "帮我通过聊天把档案填好",
   "NIW 和 EB-1A 我更适合哪个？",
   "帮我评估一下我的背景有哪些薄弱点",
   "EB-1A 十项标准我可能满足哪几项？",
@@ -44,6 +57,7 @@ type Props = {
   library?: Library;
   /** 会话还是空的时候，预先放进输入框的附件（例如工作流自动引用案件的全部文件） */
   initialPending?: Attachment[];
+  ops?: Ops;
   contextLine?: string; // 例如「当前案件：xxx（NIW）」，会随档案一起发给模型
   caseLink?: {
     cases: { id: string; name: string }[];
@@ -64,6 +78,7 @@ export default function Chat({
   initialPending,
   contextLine,
   caseLink,
+  ops,
 }: Props) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<Attachment[]>(() =>
@@ -78,6 +93,50 @@ export default function Chat({
   const bottom = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
   const messages = conv?.messages ?? [];
+  const allAttachments = (list: ChatMessage[]) => list.flatMap((m) => m.attachments ?? []);
+  const world = (list: ChatMessage[] = messages): World | null =>
+    ops ? { profile: ops.profile, cases: ops.cases, linkedCaseId: ops.linkedCaseId, attachments: allAttachments(list) } : null;
+
+  /** 用户点了「应用」：依次执行，前一个的结果（比如新建的案件）后一个能用上 */
+  async function runActions(msgId: string, ids: string[]) {
+    if (!ops || !conv) return;
+    const w = world()!;
+    const done: Record<string, Pick<ActionItem, "status" | "note">> = {};
+    for (const item of messages.find((m) => m.id === msgId)?.actions ?? []) {
+      if (!ids.includes(item.id) || item.status !== "pending") continue;
+      const r = apply(item.action, w);
+      if (r.error) {
+        done[item.id] = { status: "pending", note: r.error };
+        continue;
+      }
+      if (r.copy) {
+        const data = await getFile(r.copy.from);
+        if (!data) {
+          done[item.id] = { status: "pending", note: "文件内容已经不在了，请重新上传。" };
+          continue;
+        }
+        await putFile(r.copy.to, data);
+      }
+      if (r.profile) w.profile = r.profile;
+      if (r.cases) w.cases = r.cases;
+      done[item.id] = { status: "applied" };
+    }
+    ops.commit({ profile: w.profile, cases: w.cases });
+    patchConv(conv.id, (c) => ({
+      ...c,
+      messages: c.messages.map((m) =>
+        m.id === msgId ? { ...m, actions: m.actions?.map((x) => (done[x.id] ? { ...x, ...done[x.id] } : x)) } : m,
+      ),
+    }));
+  }
+  const skipAction = (msgId: string, id: string) =>
+    conv &&
+    patchConv(conv.id, (c) => ({
+      ...c,
+      messages: c.messages.map((m) =>
+        m.id === msgId ? { ...m, actions: m.actions?.map((x) => (x.id === id ? { ...x, status: "skipped" as const, note: undefined } : x)) } : m,
+      ),
+    }));
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -135,10 +194,10 @@ export default function Chat({
       });
     }
     const id = convId;
-    const setBot = (text: string) =>
+    const setBot = (text: string, actions?: ActionItem[]) =>
       patchConv(id, (c) => ({
         ...c,
-        messages: c.messages.map((m) => (m.id === botMsg.id ? { ...m, text } : m)),
+        messages: c.messages.map((m) => (m.id === botMsg.id ? { ...m, text, ...(actions?.length ? { actions } : {}) } : m)),
       }));
 
     setInput("");
@@ -170,7 +229,11 @@ export default function Chat({
     let suffix = "";
     // 文档模式下，回复里的文档标签不显示在聊天里
     const visible = () =>
-      docCtx ? stripDocBlocks(raw) || (raw.includes("<doc_") ? "_正在修改文档…_" : "") : raw;
+      docCtx
+        ? stripDocBlocks(raw) || (raw.includes("<doc_") ? "_正在修改文档…_" : "")
+        : ops
+          ? stripActions(raw) || (raw.includes("<action>") ? "_正在整理要填入的内容…_" : "")
+          : raw;
     docCtx?.beginTurn();
 
     try {
@@ -180,6 +243,7 @@ export default function Chat({
         body: JSON.stringify({
           messages: payload,
           profile: [profileText, contextLine].filter(Boolean).join("\n"),
+          actions: ops && !docCtx ? worldText(world(history)!) : undefined,
           doc: docCtx
             ? {
                 title: docCtx.title,
@@ -231,7 +295,13 @@ export default function Chat({
         body = stripDocBlocks(raw);
         if (notes.length) body += `\n\n> ✏️ ${notes.join("；")}（可在文档上方撤销）`;
       }
-      setBot((body + suffix).trim());
+      let items: ActionItem[] | undefined;
+      if (ops && !docCtx) {
+        items = parseActions(raw).map((action) => ({ id: uid(), action, status: "pending" as const }));
+        body = stripActions(raw);
+        if (!body && items.length) body = "我整理成了下面的卡片，确认无误后点「应用」。";
+      }
+      setBot((body + suffix).trim(), items);
       setBusy(false);
       abort.current = null;
       account.refresh(); // 更新余额
@@ -276,7 +346,7 @@ export default function Chat({
         placeholder={
           docCtx
             ? "告诉 AI 怎么写、怎么改，比如「把第二段改得更具体」"
-            : "关于 NIW / EB-1A 的一切，尽管问。可以拖入或上传简历、推荐信等材料"
+            : "关于 NIW / EB-1A 的一切，尽管问。也可以说「帮我填档案」，或上传简历、媒体报道等材料让我整理归档"
         }
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
@@ -433,6 +503,49 @@ export default function Chat({
                   <i />
                 </div>
               ) : null}
+              {m.actions && m.actions.length > 0 && (
+                <div className="actions">
+                  {m.actions.map((item) => {
+                    const w = world();
+                    const d = w ? describe(item.action, w) : { title: "操作", rows: [], problem: undefined };
+                    const pending = item.status === "pending";
+                    return (
+                      <div key={item.id} className={`action-card ${item.status}`}>
+                        <div className="action-head">
+                          <strong>{d.title}</strong>
+                          {item.status === "applied" && <span className="tag">已应用</span>}
+                          {item.status === "skipped" && <span className="tag">已忽略</span>}
+                        </div>
+                        {d.rows.map((r, k) => (
+                          <div className="action-row" key={k}>
+                            <span>{r.label}</span>
+                            <div>
+                              {r.value}
+                              {pending && r.old && <small>会替换掉原来的内容：{r.old}</small>}
+                            </div>
+                          </div>
+                        ))}
+                        {pending && (item.note || d.problem) && <div className="notice">{item.note || d.problem}</div>}
+                        {pending && ops && (
+                          <div className="form-actions">
+                            <button className="btn-ghost" onClick={() => skipAction(m.id, item.id)}>
+                              忽略
+                            </button>
+                            <button className="btn-accent" disabled={Boolean(d.problem)} onClick={() => runActions(m.id, [item.id])}>
+                              应用
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {ops && m.actions.filter((x) => x.status === "pending").length > 1 && (
+                    <button className="btn-accent" onClick={() => runActions(m.id, m.actions!.map((x) => x.id))}>
+                      全部应用
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           <div ref={bottom} />
