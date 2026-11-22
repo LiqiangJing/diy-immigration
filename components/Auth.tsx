@@ -74,6 +74,7 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
                 换一个邮箱
               </button>
             </p>
+            {!devCode && <p>一两分钟内没收到的话，请看一下垃圾邮件箱，或在邮箱里搜索「DIY Immigration」。</p>}
             {devCode && (
               <div className="dev-code">
                 测试模式（服务端还没配置发信）：验证码是 <strong>{devCode}</strong>
