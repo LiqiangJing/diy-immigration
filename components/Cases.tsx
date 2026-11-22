@@ -28,6 +28,7 @@ type Props = {
   citationReport: string; // 由「我的档案」的学术数据生成，可能为空
   notableReport: string; // 由「我的档案」的重要引用分析生成，可能为空
   socReport: string; // 由「我的档案」的贡献总结生成，可能为空
+  initialOpen?: { caseId?: string; tab: "guide" | "files" }; // 从聊天里点「去查看」过来时，直接打开对应的案件
 };
 
 type Tab = "guide" | "docs" | "files" | "checklist" | "pack";
@@ -45,12 +46,12 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-export default function Cases({ cases, setCases, docs, setDocs, profileText, profile, goProfile, petitioner, citationReport, notableReport, socReport }: Props) {
-  const [openId, setOpenId] = useState<string | null>(null);
+export default function Cases({ cases, setCases, docs, setDocs, profileText, profile, goProfile, petitioner, citationReport, notableReport, socReport, initialOpen }: Props) {
+  const [openId, setOpenId] = useState<string | null>(initialOpen?.caseId ?? null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
   const [draft, setDraft] = useState<DocFile | null>(null);
-  const [tab, setTab] = useState<Tab>("guide");
+  const [tab, setTab] = useState<Tab>(initialOpen?.tab ?? "guide");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<CaseType>("NIW");

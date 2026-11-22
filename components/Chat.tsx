@@ -8,8 +8,8 @@ import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/ty
 import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
 import { useAccount } from "@/lib/account";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
-import { apply, describe, parseActions, stripActions, worldText } from "@/lib/actions";
-import type { ActionItem, World } from "@/lib/actions";
+import { apply, describe, parseActions, placeOf, stripActions, worldText } from "@/lib/actions";
+import type { ActionItem, Place, World } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
 import type { ImmigrationCase } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export type Ops = {
   cases: ImmigrationCase[];
   linkedCaseId: string | null;
   commit: (r: { profile?: Profile; cases?: ImmigrationCase[] }) => void;
+  open: (place: Place) => void; // 跳到被修改的那一页
 };
 
 /** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
@@ -514,6 +515,11 @@ export default function Chat({
                         <div className="action-head">
                           <strong>{d.title}</strong>
                           {item.status === "applied" && <span className="tag">已应用</span>}
+                          {item.status === "applied" && ops && w && (
+                            <button className="link" onClick={() => ops.open(placeOf(item.action, w))}>
+                              去看填好的页面 →
+                            </button>
+                          )}
                           {item.status === "skipped" && <span className="tag">已忽略</span>}
                         </div>
                         {d.rows.map((r, k) => (

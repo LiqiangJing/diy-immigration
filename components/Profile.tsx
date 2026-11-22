@@ -12,6 +12,7 @@ import { uid } from "@/lib/types";
 type Props = {
   profile: ProfileData;
   setProfile: React.Dispatch<React.SetStateAction<ProfileData>>;
+  initialTab?: "basic" | "scholar" | "soc"; // 从聊天里点「去查看」过来时，直接打开对应的那一栏
 };
 
 const newDegree = (type = ""): Degree => ({
@@ -130,7 +131,7 @@ const SOURCE_NOTE: Record<string, string> = {
   OpenAlex: "OpenAlex 是按姓名匹配的，和 Google Scholar 的数字通常会有出入。",
 };
 
-export default function Profile({ profile: p, setProfile }: Props) {
+export default function Profile({ profile: p, setProfile, initialTab }: Props) {
   const [candidates, setCandidates] = useState<{ src: Src; list: Candidate[] } | null>(null);
   const [loading, setLoading] = useState<Src | "">("");
   const [scholarError, setScholarError] = useState("");
@@ -234,7 +235,7 @@ export default function Profile({ profile: p, setProfile }: Props) {
 
   const set = (patch: Partial<ProfileData>) =>
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
-  const [tab, setTab] = useState<"basic" | "scholar" | "soc">("basic");
+  const [tab, setTab] = useState<"basic" | "scholar" | "soc">(initialTab ?? "basic");
 
   const rootRef = useRef<HTMLDivElement>(null);
   const openTab = (t: typeof tab) => {

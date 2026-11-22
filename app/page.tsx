@@ -11,6 +11,7 @@ import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
 import { citationReport, emptyProfile, normalizeProfile, notableReport, profileToText, socReport } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
+import type { Place } from "@/lib/actions";
 import { setRemoteFiles } from "@/lib/files";
 import { fetchAll, fileIds, isEmpty, loadMeta, merge, pushOne, saveMeta, SYNC_KEYS, uploadMissingFiles } from "@/lib/sync";
 import type { SyncKey, SyncMeta } from "@/lib/sync";
@@ -275,6 +276,8 @@ export default function Home() {
   const linkedCase = cases.find((c) => c.id === linkedId) ?? null;
   const sorted = [...convs].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  // 从聊天的确认卡片点「去看填好的页面」时记下要打开哪一栏；之后从侧边栏正常进入时不再沿用
+  const [jump, setJump] = useState<Place | null>(null);
   const go = (v: View) => {
     setView(v);
     setSidebarOpen(false);
@@ -296,11 +299,11 @@ export default function Home() {
             <strong>聊天</strong>
             <span>移民问题，随时问</span>
           </button>
-          <button className={view === "cases" ? "on" : ""} onClick={() => go("cases")}>
+          <button className={view === "cases" ? "on" : ""} onClick={() => (setJump(null), go("cases"))}>
             <strong>案件</strong>
             <span>文档、文件、材料清单</span>
           </button>
-          <button className={view === "profile" ? "on" : ""} onClick={() => go("profile")}>
+          <button className={view === "profile" ? "on" : ""} onClick={() => (setJump(null), go("profile"))}>
             <strong>我的档案</strong>
             <span>学历、成果与未来计划</span>
           </button>
@@ -401,6 +404,10 @@ export default function Home() {
                 if (r.profile) setProfile(r.profile);
                 if (r.cases) setCases(r.cases);
               },
+              open: (place) => {
+                setJump(place);
+                go(place.view);
+              },
             }}
             caseLink={{
               cases,
@@ -424,9 +431,10 @@ export default function Home() {
             citationReport={citationReport(profile)}
             notableReport={notableReport(profile)}
             socReport={socReport(profile)}
+            initialOpen={jump?.view === "cases" ? jump : undefined}
           />
         ) : view === "profile" ? (
-          <Profile profile={profile} setProfile={setProfile} />
+          <Profile profile={profile} setProfile={setProfile} initialTab={jump?.view === "profile" ? jump.tab : undefined} />
         ) : (
           <>
             {toast && <div className="toast">{toast}</div>}

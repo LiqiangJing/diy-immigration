@@ -274,6 +274,15 @@ export function describe(a: ChatAction, w: World): { title: string; rows: Row[];
   };
 }
 
+/** 这个操作改的是哪一页，应用之后可以带用户过去看 */
+export type Place = { view: "profile"; tab: "basic" | "soc" } | { view: "cases"; caseId?: string; tab: "guide" | "files" };
+export function placeOf(a: ChatAction, w: World): Place {
+  if (a.type === "profile") return { view: "profile", tab: "basic" };
+  if (a.type === "soc") return { view: "profile", tab: "soc" };
+  if (a.type === "case") return { view: "cases", caseId: w.cases.find((c) => c.name === a.name)?.id, tab: "guide" };
+  return { view: "cases", caseId: targetCase(w, a.case)?.id, tab: "files" };
+}
+
 /* ---------- 应用 ---------- */
 
 /**
