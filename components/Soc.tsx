@@ -4,6 +4,53 @@ import { emptySoc } from "@/lib/profile";
 import type { Profile as ProfileData, Soc as SocData, SocProject, SocReview } from "@/lib/profile";
 import { uid } from "@/lib/types";
 import { CET, CET_SOURCE } from "@/lib/cet";
+import { SOC_GENERAL, SOC_GUIDE } from "@/lib/socGuide";
+
+/** 一项的详细填写说明，默认收起 */
+function GuideBox({ id }: { id: string }) {
+  const g = SOC_GUIDE[id];
+  if (!g) return null;
+  return (
+    <details className="guide">
+      <summary>查看填写说明和示例</summary>
+      <ul>
+        {g.points.map((x) => (
+          <li key={x}>{x}</li>
+        ))}
+      </ul>
+      {g.example && (
+        <>
+          <strong>示例（内容是虚构的，只示范写法）</strong>
+          <pre>{g.example}</pre>
+        </>
+      )}
+      {g.niw && (
+        <p>
+          <strong>申请 NIW：</strong>
+          {g.niw}
+        </p>
+      )}
+      {g.eb1a && (
+        <p>
+          <strong>申请 EB-1A：</strong>
+          {g.eb1a}
+        </p>
+      )}
+      {g.evidence && (
+        <p>
+          <strong>之后要准备的证据：</strong>
+          {g.evidence}
+        </p>
+      )}
+      {g.avoid && (
+        <p>
+          <strong>常见问题：</strong>
+          {g.avoid.join("；")}。
+        </p>
+      )}
+    </details>
+  );
+}
 
 type Props = {
   profile: ProfileData;
@@ -17,6 +64,7 @@ function Area({
   onChange,
   rows = 4,
   placeholder,
+  guide,
 }: {
   label: string;
   hint?: string;
@@ -24,13 +72,17 @@ function Area({
   onChange: (v: string) => void;
   rows?: number;
   placeholder?: string;
+  guide?: string; // lib/socGuide.ts 里的说明
 }) {
   return (
-    <label>
-      {label}
-      {hint && <small>{hint}</small>}
-      <textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
-    </label>
+    <div className="field">
+      <label>
+        {label}
+        {hint && <small>{hint}</small>}
+        <textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      </label>
+      {guide && <GuideBox id={guide} />}
+    </div>
   );
 }
 
@@ -53,6 +105,11 @@ export default function Soc({ profile: p, setProfile }: Props) {
           贡献总结是申请信和推荐信的事实底稿，NIW 和 EB-1A 都用它。不用写得正式，列要点、写草稿都可以，中英文都行；AI
           写文书时会在此基础上展开。只写真实的、拿得出证据的内容。
         </small>
+        <details className="guide">
+          <summary>填之前先看：证据和真实性</summary>
+          <p>{SOC_GENERAL.evidence}</p>
+          <p>{SOC_GENERAL.truth}</p>
+        </details>
         <label>
           主要领域
           <input value={p.field} onChange={(e) => setProfile((prev) => ({ ...prev, field: e.target.value, updatedAt: Date.now() }))} placeholder="例如 Trustworthy Artificial Intelligence" />
@@ -62,7 +119,9 @@ export default function Soc({ profile: p, setProfile }: Props) {
             所有文书里这个领域的写法要保持一致。
           </small>
         </label>
+        <GuideBox id="field" />
         <Area
+          guide="subareas"
           label="细分方向（最多三个）"
           hint="每行一个，用英文。从上面的主要领域往下拆：你大部分已有成果和接下来计划做的工作，具体落在哪一到三个方向上。可以是工作的性质，也可以是你区别于同行的专长。这几个说法会在申请信和推荐信里反复出现，用来说明你的专长是什么，所以要和你已有的成果对得上；NIW 申请还要和 Proposed Endeavor 对得上。"
           rows={3}
@@ -112,6 +171,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
           <small>已经有三行时不能再加，先在上面的框里删掉一行。</small>
         </details>
         <Area
+          guide="importance"
           label="这项工作的重要性、益处和应用"
           hint="可以按三层写：要解决什么问题、现在缺什么；谁会受益、会带来什么实际变化；对本领域、对全球、对美国各有什么意义（对应哪些美国政府的优先事项）。重点写你在美国正在做和将要做的工作，用外行能看懂的话。引用的政府文件、报告或数据请附上链接。NIW 的第一项要求（实质价值和国家重要性）主要靠这一段。"
           rows={8}
@@ -127,6 +187,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
           申请信里「原创贡献」一节会按这里的项目逐个展开。NIW 申请的项目要和 Proposed Endeavor 相关；不直接相关的，说明它给了你哪些做后续工作需要的能力。
           这一步不用上传证据，文书定稿后再按引用到的内容准备。
         </small>
+        <GuideBox id="project" />
         {soc.projects.map((x, i) => (
           <div className="soc-project" key={x.id}>
             <div className="soc-project-head">
@@ -150,12 +211,14 @@ export default function Soc({ profile: p, setProfile }: Props) {
               </label>
             </div>
             <Area
+              guide="outputs"
               label="成果"
               hint="最多三项最有分量的，每行一项，写得越具体越好：论文写标题、作者、发表的期刊或会议和年份；专利写名称、专利号和年份；开源软件或数据集写链接和下载量。"
               value={x.outputs}
               onChange={(outputs) => setProject(x.id, { outputs })}
             />
             <Area
+              guide="funding"
               label="经费来源（如有）"
               hint="只写有竞争性的外部经费，不写学校或公司内部经费。写资助机构、项目编号和 PI 是谁。之后需要证据把你和这笔经费联系起来，比如你论文致谢里写明了这笔经费。"
               rows={2}
@@ -163,6 +226,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
               onChange={(funding) => setProject(x.id, { funding })}
             />
             <Area
+              guide="summary"
               label="工作概述"
               hint="200 词左右，用外行能看懂的话，按「要解决什么问题 → 你怎么做的 → 结果是什么」写。合作项目先说整体，再用第一人称写清你本人做了什么（I designed… / I led…）。"
               rows={6}
@@ -170,6 +234,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
               onChange={(summary) => setProject(x.id, { summary })}
             />
             <Area
+              guide="impact"
               label="意义和影响"
               hint="最多三条，每条 75–100 词：是谁、发表在哪、具体怎么用了你的工作，附上链接。最有分量的是独立引用（和你没有共同作者的论文）；其次是被综述引用、被公司或产品采用、被政府报告或白皮书引用、被专利引用、进入课程等。可以直接从「学术记录与引用」里的重要引用分析里挑。实在凑不够三条，就写这项工作对领域、对全球或对美国的意义。"
               rows={8}
@@ -191,6 +256,7 @@ export default function Soc({ profile: p, setProfile }: Props) {
       <section className="card">
         <h3>三、其他成就</h3>
         <Area
+          guide="awards"
           label="奖项"
           hint="国家级或国际级的奖项，每行一个：奖项名称、颁发机构、年份、获奖比例（如 5/604）。"
           value={soc.awards}
@@ -222,8 +288,10 @@ export default function Soc({ profile: p, setProfile }: Props) {
           <button className="btn-ghost" onClick={() => set({ reviews: [...soc.reviews, { id: uid(), venue: "", count: "", invited: "" }] })}>
             + 添加期刊或会议
           </button>
+          <GuideBox id="reviews" />
         </div>
         <Area
+          guide="openSource"
           label="开源贡献"
           hint="每个项目写：名称和链接、你的角色、使用情况（star、fork、下载量、被谁采用）。"
           rows={5}
@@ -231,12 +299,14 @@ export default function Soc({ profile: p, setProfile }: Props) {
           onChange={(openSource) => set({ openSource })}
         />
         <Area
+          guide="media"
           label="媒体报道"
           hint="报道过你或你的工作的媒体，每行一条：媒体名称、标题、日期、链接。报道原文请打印成 PDF 上传到案件的「文件」里。"
           value={soc.media}
           onChange={(media) => set({ media })}
         />
         <Area
+          guide="other"
           label="其他"
           hint="前面没有覆盖到的：领导或关键角色、需要杰出成就才能加入的协会会员资格、高薪酬、专利或产品、受邀报告等。"
           value={soc.other}
