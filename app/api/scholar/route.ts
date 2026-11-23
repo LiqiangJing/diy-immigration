@@ -11,6 +11,8 @@
 
 import { getUser } from "@/lib/server/auth";
 import { addCredits, SCHOLAR_COST } from "@/lib/server/credits";
+import { readJson, TooLarge } from "@/lib/server/body";
+import { busy, hold, rate } from "@/lib/server/limits";
 import { fetchScholar, parseScholarHtml, scholarUserId } from "@/lib/server/scholar";
 import { s2Author, s2AuthorId, s2Search } from "@/lib/server/semanticScholar";
 
@@ -42,6 +44,22 @@ export async function GET(req: Request) {
   if ((id || gs || s2) && user.credits < SCHOLAR_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
   }
+  // 按姓名查找不收费，限一下次数；收费的获取同一时间只能有一个在进行
+  if (!(id || gs || s2) && !rate(`lookup:${user.id}`, 40, 600_000)) {
+    return Response.json({ error: "查找得太频繁了，请过几分钟再试。" }, { status: 429 });
+  }
+  const release = id || gs || s2 ? hold(`scholar-paid:${user.id}`, 1) : hold(`scholar-free:${user.id}`, 3);
+  if (!release) return busy();
+  try {
+    return await lookup({ q, id, gs, s2, s2q, user });
+  } finally {
+    release();
+  }
+}
+
+type Lookup = { q?: string; id?: string; gs?: string; s2?: string; s2q?: string; user: { id: string } };
+
+async function lookup({ q, id, gs, s2, s2q, user }: Lookup): Promise<Response> {
 
   if (gs) {
     const userId = scholarUserId(gs);
@@ -149,15 +167,31 @@ export async function POST(req: Request) {
   if (user.credits < SCHOLAR_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
   }
-  const body = await req.json().catch(() => null);
+  let body;
+  try {
+    body = await readJson(req, 9_000_000);
+  } catch (e) {
+    if (e instanceof TooLarge) return Response.json({ error: "文件太大，请确认上传的是另存的 Scholar 主页（.html）。" }, { status: 400 });
+    throw e;
+  }
   const html = typeof body?.html === "string" ? body.html : "";
-  if (!html || html.length > 5_000_000) {
+  if (!html || html.length > 3_000_000) {
     return Response.json({ error: "文件为空或太大，请确认上传的是另存的 Scholar 主页（.html）。" }, { status: 400 });
   }
   const result = parseScholarHtml(html);
   if (!result) {
     return Response.json(
       { error: "没能从这个文件里读出论文列表。请确认是在你的 Google Scholar 个人主页上另存的网页。" },
+      { status: 400 },
+    );
+  }
+  // 主页默认只显示前 20 篇。保存下来的文件里不到 100 篇、而「展开」按钮还能点，说明没存全：不收费，让用户按说明重新保存
+  if (result.author.more && result.works.length < 100) {
+    return Response.json(
+      {
+        error: `这个文件里只有 ${result.works.length} 篇论文，你的主页上还有更多没显示出来。请用上面第 1 步的链接打开主页（一页显示 100 篇）再保存一次。`,
+        incomplete: true,
+      },
       { status: 400 },
     );
   }

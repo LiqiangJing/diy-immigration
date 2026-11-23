@@ -6,6 +6,7 @@
  */
 
 import { getUser } from "@/lib/server/auth";
+import { busy, hold, rate } from "@/lib/server/limits";
 import { fetchPaperPdf } from "@/lib/server/papers";
 
 export const runtime = "nodejs";
@@ -19,6 +20,12 @@ export async function POST(req: Request) {
   const url = typeof body?.url === "string" ? body.url.trim().slice(0, 500) : undefined;
   if (title.length < 8) return Response.json({ error: "论文标题太短。" }, { status: 400 });
 
+  // 下载不收费，所以限一下：同时最多两篇，每小时最多 150 篇
+  if (!rate(`paper:${user.id}`, 150, 3600_000)) {
+    return Response.json({ error: "下载得太多了，请过一会儿再继续。" }, { status: 429 });
+  }
+  const release = hold(`paper:${user.id}`, 2);
+  if (!release) return busy("上一篇论文的下载");
   try {
     const r = await fetchPaperPdf(title, url);
     if (r === null) return Response.json({ error: "没有找到这篇论文。" }, { status: 404 });
@@ -39,5 +46,7 @@ export async function POST(req: Request) {
       { error: code === "429" ? "现在访问的人太多，请过一会儿再试。" : "下载失败，请稍后再试。" },
       { status: 502 },
     );
+  } finally {
+    release();
   }
 }

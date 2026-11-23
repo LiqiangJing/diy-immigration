@@ -70,6 +70,14 @@ export function db(): Database.Database {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, file_id)
     );
+    -- 每发一次登录验证码记一行，用来限制同一个邮箱、同一个 IP 一段时间内能要几次
+    CREATE TABLE IF NOT EXISTS code_requests (
+      id    INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      ip    TEXT NOT NULL,
+      at    INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS code_requests_at ON code_requests(at);
     -- 支付宝订单
     CREATE TABLE IF NOT EXISTS orders (
       order_no   TEXT PRIMARY KEY,

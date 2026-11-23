@@ -5,10 +5,11 @@
  */
 
 import type { CiteMap } from "../profile";
+import { normTitle } from "../titles";
 
 const BASE = "https://api.openalex.org";
 const MAX_PAPERS = 12;
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const norm = normTitle;
 const tail = (url: unknown) => String(url ?? "").split("/").pop() ?? "";
 
 async function openalex(path: string, params: Record<string, string>) {
@@ -27,6 +28,8 @@ async function openalex(path: string, params: Record<string, string>) {
 export async function buildCiteMap(titles: string[], lastName: string): Promise<CiteMap> {
   const ids: string[] = [];
   const authors = new Map<string, { n: number; name: string }>();
+  const ln = norm(lastName);
+  const hasMe = (w: any) => (w.authorships ?? []).some((a: any) => norm(a.author?.display_name ?? "").split(" ").includes(ln));
   for (const title of titles.slice(0, MAX_PAPERS)) {
     // 标题里的逗号、冒号等会被当成筛选语法，去掉
     const q = title.replace(/[,:|!&()"]+/g, " ").replace(/\s+/g, " ").trim();
@@ -43,7 +46,10 @@ export async function buildCiteMap(titles: string[], lastName: string): Promise<
       continue;
     }
     const want = norm(title);
-    const hit = (data.results ?? []).find((w: any) => norm(w.title ?? "") === want);
+    if (!want) continue;
+    // 标题相同的论文可能不止一篇（别人写过同名的）：优先取作者里有申请人的那一篇
+    const same = (data.results ?? []).filter((w: any) => norm(w.title ?? "") === want);
+    const hit = (ln.length > 1 ? same.find(hasMe) : undefined) ?? same[0];
     if (!hit) continue;
     ids.push(tail(hit.id));
     for (const a of hit.authorships ?? []) {
@@ -56,7 +62,6 @@ export async function buildCiteMap(titles: string[], lastName: string): Promise<
   if (!ids.length) throw new Error("NOT_FOUND");
 
   // 认出申请人本人：姓能对上、且出现在最多篇论文里的那位作者
-  const ln = norm(lastName);
   const me = [...authors.entries()]
     .filter(([, v]) => ln.length > 1 && norm(v.name).split(" ").includes(ln))
     .sort((a, b) => b[1].n - a[1].n)[0];

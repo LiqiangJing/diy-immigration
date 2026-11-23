@@ -9,7 +9,7 @@ import Auth from "@/components/Auth";
 import Contact from "@/components/Contact";
 import { AccountContext } from "@/lib/account";
 import type { Me } from "@/lib/account";
-import { citationReport, emptyProfile, normalizeProfile, notableReport, profileToText, socReport } from "@/lib/profile";
+import { citationReport, emptyProfile, endeavorReport, normalizeProfile, notableReport, profileToText, socReport } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Place } from "@/lib/actions";
 import { setRemoteFiles } from "@/lib/files";
@@ -276,6 +276,9 @@ export default function Home() {
   const linkedCase = cases.find((c) => c.id === linkedId) ?? null;
   const sorted = [...convs].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  // 用户的案件只有一种类型时，档案里的填写说明只显示那一种的
+  const caseOnly = cases.length === 0 ? null : cases.every((c) => c.type === "NIW") ? "NIW" : cases.every((c) => c.type === "EB-1A") ? "EB-1A" : null;
+
   // 从聊天的确认卡片点「去看填好的页面」时记下要打开哪一栏；之后从侧边栏正常进入时不再沿用
   const [jump, setJump] = useState<Place | null>(null);
   const go = (v: View) => {
@@ -392,7 +395,7 @@ export default function Home() {
             conv={active}
             addConv={addConv}
             patchConv={patchConv}
-            profileText={profileToText(profile)}
+            profileText={profileToText(profile, linkedCase?.type === "NIW")}
             firstName={(profile.chineseName || profile.firstName).trim()}
             library={linkedCase ? caseLibrary(linkedCase, docs) : undefined}
             contextLine={linkedCase ? caseLine(linkedCase) : undefined}
@@ -424,17 +427,25 @@ export default function Home() {
             setCases={setCases}
             docs={docs}
             setDocs={setDocs}
-            profileText={profileToText(profile)}
             profile={profile}
-            goProfile={() => go("profile")}
+            goProfile={(tab) => {
+              setJump(tab ? { view: "profile", tab } : null);
+              go("profile");
+            }}
             petitioner={`${profile.firstName} ${profile.lastName}`.trim()}
             citationReport={citationReport(profile)}
             notableReport={notableReport(profile)}
             socReport={socReport(profile)}
+            endeavorReport={endeavorReport(profile)}
             initialOpen={jump?.view === "cases" ? jump : undefined}
           />
         ) : view === "profile" ? (
-          <Profile profile={profile} setProfile={setProfile} initialTab={jump?.view === "profile" ? jump.tab : undefined} />
+          <Profile
+            profile={profile}
+            setProfile={setProfile}
+            initialTab={jump?.view === "profile" ? jump.tab : undefined}
+            only={caseOnly}
+          />
         ) : (
           <>
             {toast && <div className="toast">{toast}</div>}

@@ -5,12 +5,13 @@
  * 支持的操作：
  *   profile   填「我的档案」的基本资料
  *   soc       填「贡献总结」
+ *   endeavor  填「拟从事事业」（NIW）
  *   case      新建案件
  *   saveFile  把这次对话里用户上传的文件存进案件的文件里（案件文件打包时默认就是 Exhibit）
  */
 
-import { DEGREE_TYPES, REVIEW_OPTIONS, emptySoc } from "./profile";
-import type { Degree, Profile, Related, Soc, SocProject, SocReview } from "./profile";
+import { DEGREE_TYPES, ENDEAVOR_KEYS, REVIEW_OPTIONS, emptyEndeavor, emptySoc } from "./profile";
+import type { Degree, Endeavor, Profile, Related, Soc, SocProject, SocReview } from "./profile";
 import type { Attachment, CaseType, ImmigrationCase } from "./types";
 import { uid } from "./types";
 
@@ -50,12 +51,20 @@ const PROJECT_TEXT = {
   summary: "工作概述",
   impact: "意义和影响",
 } as const;
+const ENDEAVOR_TEXT: Record<(typeof ENDEAVOR_KEYS)[number], string> = {
+  statement: "要做的事（一两句话）",
+  plan: "未来三到五年的计划",
+  role: "在哪里、以什么身份做",
+  progress: "已有的进展和外部支持",
+  waiver: "为什么豁免对美国有利",
+};
 const YESNO: Record<string, string> = { yes: "是", no: "否", unsure: "不确定", other: "其他" };
 
 type ProfileTextKey = keyof typeof PROFILE_TEXT;
 type ProfileChoiceKey = keyof typeof PROFILE_CHOICE;
 type SocTextKey = keyof typeof SOC_TEXT;
 type ProjectKey = keyof typeof PROJECT_TEXT;
+type EndeavorKey = keyof typeof ENDEAVOR_TEXT;
 type DegreeIn = Omit<Degree, "id">;
 
 export type ChatAction =
@@ -73,6 +82,7 @@ export type ChatAction =
       updateProjects: { match: string; set: Partial<Record<ProjectKey, string>> }[];
       addReviews: Omit<SocReview, "id">[];
     }
+  | { type: "endeavor"; set: Partial<Record<EndeavorKey, string>>; append: Partial<Record<EndeavorKey, string>> }
   | { type: "case"; name: string; caseType: CaseType }
   | { type: "saveFile"; file: string; case: string; title: string };
 
@@ -163,6 +173,12 @@ function one(raw: unknown): ChatAction | null {
     if (!Object.keys(set).length && !Object.keys(append).length && !addProjects.length && !updateProjects.length && !addReviews.length)
       return null;
     return { type: "soc", set, append, addProjects, updateProjects, addReviews };
+  }
+  if (a.type === "endeavor") {
+    const set = pickText(a.set, ENDEAVOR_TEXT, 8000);
+    const append = pickText(a.append, ENDEAVOR_TEXT, 8000);
+    if (!Object.keys(set).length && !Object.keys(append).length) return null;
+    return { type: "endeavor", set, append };
   }
   if (a.type === "case") {
     const caseType: CaseType = a.caseType === "EB-1A" ? "EB-1A" : "NIW";
@@ -259,6 +275,15 @@ export function describe(a: ChatAction, w: World): { title: string; rows: Row[];
       });
     return { title: "填入「我的档案 · 贡献总结」", rows, problem };
   }
+  if (a.type === "endeavor") {
+    const e: Endeavor = w.profile.endeavor ?? emptyEndeavor();
+    for (const k of Object.keys(a.set) as EndeavorKey[]) {
+      const old = e[k].trim();
+      rows.push({ label: ENDEAVOR_TEXT[k], value: a.set[k]!, old: old && old !== a.set[k] ? old : undefined });
+    }
+    for (const k of Object.keys(a.append) as EndeavorKey[]) rows.push({ label: `${ENDEAVOR_TEXT[k]}（在原有内容后面追加）`, value: a.append[k]! });
+    return { title: "填入「我的档案 · 拟从事事业」", rows };
+  }
   if (a.type === "case") {
     return { title: "新建案件", rows: [{ label: "名称", value: a.name }, { label: "类型", value: a.caseType }] };
   }
@@ -275,10 +300,11 @@ export function describe(a: ChatAction, w: World): { title: string; rows: Row[];
 }
 
 /** 这个操作改的是哪一页，应用之后可以带用户过去看 */
-export type Place = { view: "profile"; tab: "basic" | "soc" } | { view: "cases"; caseId?: string; tab: "guide" | "files" };
+export type Place = { view: "profile"; tab: "basic" | "scholar" | "soc" | "endeavor" } | { view: "cases"; caseId?: string; tab: "guide" | "files" };
 export function placeOf(a: ChatAction, w: World): Place {
   if (a.type === "profile") return { view: "profile", tab: "basic" };
   if (a.type === "soc") return { view: "profile", tab: "soc" };
+  if (a.type === "endeavor") return { view: "profile", tab: "endeavor" };
   if (a.type === "case") return { view: "cases", caseId: w.cases.find((c) => c.name === a.name)?.id, tab: "guide" };
   return { view: "cases", caseId: targetCase(w, a.case)?.id, tab: "files" };
 }
@@ -319,6 +345,11 @@ export function apply(
     soc.reviews = [...soc.reviews, ...a.addReviews.map((r) => ({ ...r, id: uid() }))];
     return { profile: { ...w.profile, soc, updatedAt: now } };
   }
+  if (a.type === "endeavor") {
+    const endeavor: Endeavor = { ...emptyEndeavor(), ...w.profile.endeavor, ...a.set };
+    for (const k of Object.keys(a.append) as EndeavorKey[]) endeavor[k] = [endeavor[k].trim(), a.append[k]].filter(Boolean).join("\n");
+    return { profile: { ...w.profile, endeavor, updatedAt: now } };
+  }
   if (a.type === "case") {
     const c: ImmigrationCase = { id: uid(), name: a.name, type: a.caseType, createdAt: now, done: [], files: [] };
     return { cases: [c, ...w.cases] };
@@ -355,6 +386,17 @@ export function worldText(w: World): string {
   const filled = (Object.keys(SOC_TEXT) as SocTextKey[]).filter((k) => soc[k].trim()).map((k) => SOC_TEXT[k]);
   if (filled.length) lines.push(`贡献总结里已经有内容的项（要补充请用 append，不要用 set 覆盖）：${filled.join("、")}`);
   if (soc.projects.length) lines.push(`贡献总结里已有的项目：${soc.projects.map((x) => `「${x.title || "未命名"}」`).join("、")}`);
+  // 拟从事事业只有 NIW 用得上：用户只有 EB-1A 案件时不提，免得模型去追问
+  const niw = w.cases.some((c) => c.type === "NIW");
+  if (niw || !w.cases.length) {
+    const e = p.endeavor ?? emptyEndeavor();
+    const todo = ENDEAVOR_KEYS.filter((k) => !e[k].trim()).map((k) => ENDEAVOR_TEXT[k]);
+    const have = ENDEAVOR_KEYS.filter((k) => e[k].trim()).map((k) => ENDEAVOR_TEXT[k]);
+    lines.push(
+      `拟从事事业（只有申请 NIW 才需要${niw ? "，用户有 NIW 案件" : "；用户还没说要申请 NIW 时不要主动问"}）还没填的项：${todo.length ? todo.join("、") : "无"}` +
+        (have.length ? `；已经有内容的项（要补充请用 append，不要用 set 覆盖）：${have.join("、")}` : ""),
+    );
+  }
   lines.push(
     w.cases.length
       ? `用户的案件：${w.cases.map((c) => `「${c.name}」（${c.type}，${(c.files ?? []).length} 个文件）`).join("、")}`

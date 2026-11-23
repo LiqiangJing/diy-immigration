@@ -287,6 +287,7 @@ button:disabled { cursor: not-allowed; }
 .step p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
 .step p.step-have { color: var(--text); }
 .step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.step-actions button { max-width: 100%; white-space: normal; text-align: left; }
 .claims { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
 .step .seg { margin-top: 10px; }
 .paper-fetch { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
@@ -373,12 +374,19 @@ button:disabled { cursor: not-allowed; }
 }
 
 /* 我的档案顶部的三个入口：一直停在顶部，往下滚也能切换 */
-.profile-tabs { position: sticky; top: -44px; z-index: 5; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px 0; margin-bottom: 8px; background: var(--bg); }
+.profile-tabs { position: sticky; top: -44px; z-index: 5; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 10px 0; margin-bottom: 8px; background: var(--bg); }
 .profile-tabs button { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .profile-tabs button small { color: var(--muted); font-size: 12px; }
 .profile-tabs button.on { border-color: var(--accent); background: var(--accent-soft); }
 .profile-tabs button.on strong { color: var(--accent); }
-@media (max-width: 640px) { .profile-tabs button small { display: none; } .profile-tabs button { padding: 10px; } }
+@media (max-width: 640px) {
+  /* 四栏在手机上排成两行两列，不再吸顶，免得挡住内容 */
+  .profile-tabs { grid-template-columns: repeat(2, 1fr); position: static; gap: 8px; }
+  .profile-tabs button small { display: none; }
+  .profile-tabs button { padding: 10px; }
+  /* 案件的五个标签一行放不下，折成两行，免得最后一个被挤到屏幕外面 */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+}
 
 .demo-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
 .demo-compare > div { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
@@ -437,11 +445,13 @@ button:disabled { cursor: not-allowed; }
 .action-card .form-actions { margin-top: 10px; }
 @media (max-width: 640px) { .action-row { grid-template-columns: 1fr; gap: 2px; } }
 
-/* 贡献总结：每一项的详细填写说明 */
-.guide { font-size: 13.5px; margin: 4px 0 2px; }
-.guide summary { cursor: pointer; color: var(--accent); font-weight: 500; }
-.guide[open] { background: var(--panel); border-radius: 10px; padding: 10px 14px; }
-.guide ul { margin: 8px 0; padding-left: 1.3em; }
-.guide li { margin: 3px 0; }
-.guide p { margin: 8px 0 0; }
-.guide pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
+/* 贡献总结、拟从事事业：每一项的详细填写说明。类名不能叫 guide，那是案件「申请向导」用的 */
+.tips { font-size: 13.5px; margin: 4px 0 2px; font-weight: 400; }
+.tips summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.tips[open] { background: var(--panel); border-radius: 10px; padding: 10px 14px; }
+.tips ul { margin: 8px 0; padding-left: 1.3em; }
+.tips li { margin: 3px 0; }
+.tips p { margin: 8px 0 0; }
+.tips a { color: var(--accent); }
+.tips pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
+.card small.for-type { color: var(--text); background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; }

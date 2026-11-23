@@ -11,6 +11,8 @@ const q = globalThis as unknown as { __s2Next?: number };
 async function turn() {
   const now = Date.now();
   const at = Math.max(now, q.__s2Next ?? 0);
+  // 队伍已经排到 25 秒以后了：直接让这一个稍后再试（调用方会提示「访问的人太多」），不让少数人的大量请求把所有人堵住
+  if (at - now > 25_000) throw new Error("429");
   q.__s2Next = at + GAP_MS;
   if (at > now) await new Promise((r) => setTimeout(r, at - now));
 }
@@ -39,7 +41,7 @@ export function s2AuthorId(input: string): string | null {
   const v = input.trim();
   if (/^\d{1,12}$/.test(v)) return v;
   try {
-    const u = new URL(v);
+    const u = new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`);
     if (!/(^|\.)semanticscholar\.org$/.test(u.hostname)) return null;
     const m = u.pathname.match(/\/author\/(?:[^/]+\/)?(\d{1,12})\/?$/);
     return m ? m[1] : null;

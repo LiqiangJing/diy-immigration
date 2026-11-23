@@ -12,6 +12,7 @@ export type DataKey = (typeof DATA_KEYS)[number];
 export const MAX_VALUE = 8 * 1024 * 1024; // 每份 JSON 的上限
 export const MAX_FILE = 20 * 1024 * 1024; // 单个文件
 export const MAX_TOTAL = 500 * 1024 * 1024; // 每个用户的文件总量
+export const MAX_FILES = 5000; // 每个用户最多存多少个文件
 
 export function readAll(userId: string): Record<string, { value: string; rev: number }> {
   const rows = db().prepare("SELECT key, value, rev FROM user_data WHERE user_id = ?").all(userId) as {
@@ -58,12 +59,10 @@ export function listFiles(userId: string): string[] {
 
 export function saveFile(userId: string, id: string, bytes: Uint8Array): "ok" | "full" {
   const d = db();
-  const used = (
-    d.prepare("SELECT COALESCE(SUM(size), 0) AS n FROM user_files WHERE user_id = ? AND file_id != ?").get(userId, id) as {
-      n: number;
-    }
-  ).n;
-  if (used + bytes.length > MAX_TOTAL) return "full";
+  const used = d
+    .prepare("SELECT COALESCE(SUM(size), 0) AS n, COUNT(*) AS files FROM user_files WHERE user_id = ? AND file_id != ?")
+    .get(userId, id) as { n: number; files: number };
+  if (used.n + bytes.length > MAX_TOTAL || used.files >= MAX_FILES) return "full";
   mkdirSync(fileDir(userId), { recursive: true });
   writeFileSync(join(fileDir(userId), id), bytes);
   d.prepare(

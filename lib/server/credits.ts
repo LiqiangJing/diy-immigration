@@ -8,13 +8,27 @@ import { db } from "./db";
 
 export const SIGNUP_BONUS = 200; // 新用户赠送，大约够做一次案件评估
 /** 每天（北京时间 0 点重置）只有前这么多个新注册用户拿得到赠送 */
-export const SIGNUP_DAILY_LIMIT = Number(process.env.SIGNUP_DAILY_LIMIT) || 100;
+export const SIGNUP_DAILY_LIMIT = envNumber("SIGNUP_DAILY_LIMIT", 100); // 设成 0 就是不送
 export const SCHOLAR_COST = 20; // 一键获取学术数据
 export const CITEMAP_COST = 30; // 生成引用地图
 export const NOTABLE_MIN_BALANCE = 100; // 做一次重要引用分析至少要有这么多余额（实际按用量扣）
 // 重要引用分析单独用低一些的倍数：一篇论文封顶约 230 credit
-export const NOTABLE_MARKUP = Number(process.env.NOTABLE_MARKUP) || 25;
-const MARKUP = Number(process.env.CREDIT_MARKUP) || 40; // 成本之上的加价倍数
+export const NOTABLE_MARKUP = envNumber("NOTABLE_MARKUP", 25) || 25;
+const MARKUP = envNumber("CREDIT_MARKUP", 40) || 40; // 成本之上的加价倍数
+
+/** 读一个数字配置；没设或写错了用默认值。0 是有效的值 */
+function envNumber(name: string, fallback: number): number {
+  const v = process.env[name];
+  if (v === undefined || v.trim() === "") return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** 粗略估算一段文字有多少 token：中日韩文字大约一个字一个多 token，其他文字大约四个字符一个 */
+export function textTokens(s: string): number {
+  const cjk = s.match(/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/g)?.length ?? 0;
+  return Math.ceil(cjk * 1.2 + (s.length - cjk) / 4);
+}
 
 /** 充值档位：付多少美元（Stripe）或人民币（支付宝），得多少 credit */
 export const PACKS = [
@@ -52,6 +66,11 @@ export function chatCost(
       (u.cache_read_input_tokens ?? 0) * PRICE.cacheRead +
       (u.cache_creation_input_tokens ?? 0) * PRICE.cacheWrite) /
     1_000_000;
+  // 上游返回的用量不是数字时不能算出 NaN：那样这笔流水会记不进去，等于白用
+  if (!Number.isFinite(usd)) {
+    console.error("[credits] 用量不是数字，按最低数额扣", u);
+    return 1;
+  }
   return Math.max(1, Math.ceil(usd * 100 * markup));
 }
 
@@ -60,6 +79,8 @@ export function chatCost(
  * 带 ref 时是幂等的：同一个 ref 只会入账一次，重复调用返回 false。
  */
 export function addCredits(userId: string, delta: number, reason: string, ref?: string): boolean {
+  if (!Number.isFinite(delta)) throw new Error("credit 变动必须是数字");
+  delta = Math.trunc(delta);
   const d = db();
   return d.transaction(() => {
     const r = d

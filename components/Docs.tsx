@@ -12,7 +12,7 @@ import type { Conversation, DocFile } from "@/lib/types";
 export const DOC_KINDS = [
   { kind: "Petition Letter", desc: "申请信，整个案件的核心论证" },
   { kind: "推荐信", desc: "Recommendation Letter 草稿" },
-  { kind: "Proposed Endeavor 陈述", desc: "NIW 拟从事事业的说明" },
+  { kind: "Proposed Endeavor 陈述", desc: "NIW 拟从事事业的说明；「我的档案」里填了拟从事事业的话，会用它自动生成" },
   { kind: "Summary of Contributions", desc: "用「我的档案」里的贡献总结自动生成，写申请信和推荐信时引用它" },
   { kind: "论文与引用记录", desc: "用「我的档案」里获取的学术数据自动生成" },
   { kind: "重要引用", desc: "用「我的档案」里的重要引用分析自动生成，写 Petition Letter 时引用它" },
@@ -34,6 +34,14 @@ const SUGGESTIONS = [
   "先问我几个问题，再开始写",
   "检查全文有没有夸大或缺少证据支撑的表述",
 ];
+// 个别种类的文档有更贴切的开场建议
+const KIND_SUGGESTIONS: Record<string, string[]> = {
+  "Proposed Endeavor 陈述": [
+    "把这些要点写成一份正式的英文 Proposed Endeavor 陈述，缺的信息先问我",
+    "帮我看看「要做的事」那句话够不够具体，给我两三个写法比较",
+    "检查计划和我已有的成果是否接得上，哪些地方还缺证据",
+  ],
+};
 
 /** 文档列表：新建 + 已有文档 */
 export function DocList({
@@ -109,6 +117,7 @@ type WorkspaceProps = {
   contextLine?: string;
   caseType?: string;
   profileText: string;
+  endeavorReady?: boolean; // 档案里已经填了拟从事事业
 };
 
 /** 文档工作区：左边文档，右边聊天 */
@@ -122,6 +131,7 @@ export function DocWorkspace({
   contextLine,
   caseType,
   profileText,
+  endeavorReady,
 }: WorkspaceProps) {
   const workflow = workflowById(doc.skill);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
@@ -274,11 +284,20 @@ export function DocWorkspace({
           contextLine={contextLine}
           intro={
             workflow
-              ? { title: workflow.title, desc: workflow.hint, suggestions: [workflow.starter] }
+              ? {
+                  title: workflow.title,
+                  desc: workflow.hint,
+                  suggestions: [
+                    // 拟从事事业已经在档案里填过，就不再让 AI 从头问一遍
+                    workflow.id === "niw-petition-narrative" && endeavorReady
+                      ? "我的拟从事事业已经填在档案里了。请先检查起草还缺哪些关键信息，一次问完，信息够了再开始写。"
+                      : workflow.starter,
+                  ],
+                }
               : {
                   title: `和 AI 一起写「${doc.kind}」`,
                   desc: "它能看到左边文档的最新内容，并直接在文档里起草和修改。点「引用」可以把案件里的文件和其他文档给它看。",
-                  suggestions: SUGGESTIONS,
+                  suggestions: KIND_SUGGESTIONS[doc.kind] ?? SUGGESTIONS,
                 }
           }
         />

@@ -3,6 +3,7 @@ import { streamViaClaudeCli } from "@/lib/claudeCli";
 import { PRICES } from "./credits";
 import type { Price, Usage } from "./credits";
 import { openaiConfigured, streamViaOpenAI } from "./openai";
+import { NOTICE } from "@/lib/notice";
 
 /** 用哪个模型通道：LLM_PROVIDER 可强制指定；否则配了哪家的 Key 就用哪家，都没配就走本机的 Claude 订阅 */
 export function llmProvider(): string {
@@ -74,7 +75,7 @@ export async function completeText(opts: {
     usage = final.usage;
     produced = Boolean(text);
   }
-  // 两个流式通道出错时会把「> ⚠️ …」写进正文而不是抛异常，这里统一成异常
-  if (!produced || /\n\n> ⚠️ /.test(text)) throw new Error("模型服务出错，请稍后再试。");
+  // 两个流式通道出错或被截断时会在正文后面追加一段提示（前面有记号）而不是抛异常，这里统一成异常
+  if (!produced || text.includes(NOTICE)) throw new Error("模型服务出错，请稍后再试。");
   return { text, usage, price };
 }

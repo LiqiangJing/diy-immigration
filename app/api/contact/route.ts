@@ -1,4 +1,5 @@
-import { getUser, normalizeEmail } from "@/lib/server/auth";
+import { crossSite, forbidden, getUser, normalizeEmail } from "@/lib/server/auth";
+import { readJson, TooLarge, tooLarge } from "@/lib/server/body";
 import { db } from "@/lib/server/db";
 import { mailConfigured, sendMail } from "@/lib/server/mail";
 
@@ -19,10 +20,17 @@ function limited(ip: string) {
  * 发信没配置或发送失败时留言仍然保存着，不会丢。
  */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  if (crossSite(req)) return forbidden();
+  let body;
+  try {
+    body = await readJson(req, 64 * 1024);
+  } catch (e) {
+    if (e instanceof TooLarge) return tooLarge("留言");
+    throw e;
+  }
   const user = getUser(req);
   const email = normalizeEmail(body?.email) ?? user?.email ?? null;
-  const message = String(body?.message ?? "").trim();
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
   if (!email) return Response.json({ error: "请填写有效的邮箱，方便我们回复你。" }, { status: 400 });
   if (message.length < 5) return Response.json({ error: "请把问题写得具体一些。" }, { status: 400 });
   if (message.length > 5000) return Response.json({ error: "内容太长了，请控制在 5000 字以内。" }, { status: 400 });

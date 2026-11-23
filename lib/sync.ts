@@ -32,6 +32,12 @@ export function saveMeta(m: SyncMeta) {
   } catch {}
 }
 
+export function clearMeta() {
+  try {
+    localStorage.removeItem(META_KEY);
+  } catch {}
+}
+
 type Item = { id?: string; updatedAt?: number };
 
 export const isEmpty = (key: SyncKey, v: unknown) =>
@@ -57,6 +63,94 @@ export function merge(key: SyncKey, local: unknown, server: unknown): unknown {
   return [...out, ...byId.values()];
 }
 
+/* ---------- 三方合并 ---------- */
+
+type Json = Record<string, unknown>;
+const isObj = (x: unknown): x is Json => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/** 内容是否相同（不看对象里字段的先后顺序；值为 undefined 的字段当作没有） */
+export function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => same(x, b[i]));
+  }
+  const oa = a as Json;
+  const ob = b as Json;
+  const ka = Object.keys(oa).filter((k) => oa[k] !== undefined);
+  const kb = Object.keys(ob).filter((k) => ob[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => same(oa[k], ob[k]));
+}
+
+/** 列表里每一项用什么认：案件、文档、会话、消息、学位、项目都有 id；学术记录按来源，引用分析按论文标题 */
+function keyOf(x: unknown): string | null {
+  if (!isObj(x)) return null;
+  if (typeof x.id === "string" && x.id) return `i:${x.id}`;
+  if (typeof x.source === "string" && x.source) return `s:${x.source}`;
+  if (typeof x.title === "string" && x.title) return `t:${x.title}`;
+  if (typeof x.citingTitle === "string" && x.citingTitle) return `c:${x.citingTitle}`;
+  return null;
+}
+function index(list: unknown[]): Map<string, unknown> | null {
+  const m = new Map<string, unknown>();
+  for (const x of list) {
+    const k = keyOf(x);
+    if (k === null || m.has(k)) return null; // 有认不出来或重复的项：这个列表不能逐项合并
+    m.set(k, x);
+  }
+  return m;
+}
+const plain = (list: unknown[]) => list.every((x) => typeof x === "string" || typeof x === "number");
+
+/**
+ * 两台设备都改过同一份数据时的合并。base 是这台设备上次和服务器对齐时的内容，
+ * 对照它就能知道哪边改了什么：只有一边改过的地方用改过的那一边；一边删掉、另一边没动的就删掉；
+ * 一边删掉、另一边改过的保留；同一个地方两边改得不一样时，以这台设备上的为准。
+ * newFirst：服务器那边新增的项放在列表最前面（案件、文档、会话都是新的在前），否则接在后面。
+ */
+export function merge3(base: unknown, local: unknown, server: unknown, newFirst = false): unknown {
+  if (same(local, server)) return local;
+  if (same(local, base)) return server;
+  if (same(server, base)) return local;
+  if (Array.isArray(local) && Array.isArray(server)) {
+    const b = Array.isArray(base) ? base : [];
+    const L = index(local);
+    const S = index(server);
+    const B = index(b);
+    if (L && S && B) {
+      const out: unknown[] = [];
+      for (const [k, l] of L) {
+        if (S.has(k)) out.push(merge3(B.get(k), l, S.get(k)));
+        else if (!B.has(k) || !same(l, B.get(k))) out.push(l); // 这边新增的，或者那边删了但这边改过的
+      }
+      const added: unknown[] = [];
+      for (const [k, v] of S) {
+        if (!L.has(k) && (!B.has(k) || !same(v, B.get(k)))) added.push(v); // 那边新增的，或者这边删了但那边改过的
+      }
+      return newFirst ? [...added, ...out] : [...out, ...added];
+    }
+    if (plain(local) && plain(server) && plain(b)) {
+      // 一串勾选项（清单、申报条件等）：这边的，去掉那边取消的，加上那边新勾的
+      const out = local.filter((x) => server.includes(x) || !b.includes(x));
+      for (const x of server) if (!b.includes(x) && !out.includes(x)) out.push(x);
+      return out;
+    }
+    return local;
+  }
+  if (isObj(local) && isObj(server)) {
+    const b = isObj(base) ? base : {};
+    const out: Json = {};
+    for (const k of new Set([...Object.keys(local), ...Object.keys(server)])) {
+      const l = local[k];
+      const v = server[k];
+      const merged = k === "updatedAt" && typeof l === "number" && typeof v === "number" ? Math.max(l, v) : merge3(b[k], l, v);
+      if (merged !== undefined) out[k] = merged;
+    }
+    return out;
+  }
+  return local;
+}
+
 export async function fetchAll(): Promise<Record<string, { value: string; rev: number }> | null> {
   try {
     const res = await fetch("/api/data", { cache: "no-store" });
@@ -67,7 +161,7 @@ export async function fetchAll(): Promise<Record<string, { value: string; rev: n
   }
 }
 
-export type PushResult = { ok: true; rev: number } | { ok: false; conflict?: { value: string; rev: number } };
+export type PushResult = { ok: true; rev: number } | { ok: false; conflict?: { value: string; rev: number }; status?: number };
 
 export async function pushOne(key: SyncKey, value: string, rev: number): Promise<PushResult> {
   try {
@@ -79,7 +173,7 @@ export async function pushOne(key: SyncKey, value: string, rev: number): Promise
     const data = await res.json().catch(() => null);
     if (res.ok && typeof data?.rev === "number") return { ok: true, rev: data.rev };
     if (res.status === 409 && typeof data?.rev === "number") return { ok: false, conflict: { value: data.value ?? "", rev: data.rev } };
-    return { ok: false };
+    return { ok: false, status: res.status };
   } catch {
     return { ok: false };
   }
@@ -113,6 +207,6 @@ export async function uploadMissingFiles(ids: string[]) {
   for (const id of ids) {
     if (onServer.has(id) || !(await hasLocalFile(id))) continue;
     const data = await getLocalFile(id);
-    if (data) await uploadFile(id, data);
+    if (data) await uploadFile(id, data); // 空内容不传
   }
 }

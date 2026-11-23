@@ -85,7 +85,7 @@ async function localPut(id: string, data: string) {
 
 export async function putFile(id: string, data: string) {
   await localPut(id, data);
-  if (remote) void uploadFile(id, data);
+  if (remote && data) void uploadFile(id, data); // 空内容服务器不收，也没有必要传
 }
 
 /** 这个文件在当前浏览器里有没有 */
@@ -154,6 +154,10 @@ export async function saveUploads(files: FileList | File[]) {
       problems.push(`「${f.name}」超过 20 MB`);
       continue;
     }
+    if (f.size === 0) {
+      problems.push(`「${f.name}」是空文件`);
+      continue;
+    }
     try {
       const id = uid();
       await putFile(id, await toBase64(f));
@@ -173,6 +177,7 @@ export async function replaceUpload(old: Attachment, f: File, keepName: boolean)
   const type = mimeOf(f);
   if (!type) return { problem: `「${f.name}」格式暂不支持（目前支持 PDF、图片、TXT、Markdown）` };
   if (f.size > MAX_FILE) return { problem: `「${f.name}」超过 20 MB` };
+  if (f.size === 0) return { problem: `「${f.name}」是空文件` };
   try {
     await putFile(old.id, await toBase64(f));
     const name = keepName ? old.name.replace(" [arXiv preprint]", "") : f.name;

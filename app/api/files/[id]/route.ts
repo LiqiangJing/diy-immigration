@@ -6,6 +6,7 @@
  */
 
 import { getUser } from "@/lib/server/auth";
+import { readBytes, TooLarge } from "@/lib/server/body";
 import { deleteFile, MAX_FILE, readFile, saveFile, validFileId } from "@/lib/server/userData";
 
 export const runtime = "nodejs";
@@ -22,11 +23,14 @@ async function auth(req: Request, ctx: Ctx) {
 export async function PUT(req: Request, ctx: Ctx) {
   const a = await auth(req, ctx);
   if (a.error) return a.error;
-  if (Number(req.headers.get("content-length") ?? 0) > MAX_FILE) {
-    return Response.json({ error: "文件超过 20 MB。" }, { status: 413 });
+  let bytes: Uint8Array;
+  try {
+    bytes = await readBytes(req, MAX_FILE);
+  } catch (e) {
+    if (e instanceof TooLarge) return Response.json({ error: "文件超过 20 MB。" }, { status: 413 });
+    throw e;
   }
-  const bytes = new Uint8Array(await req.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > MAX_FILE) return Response.json({ error: "文件大小不对。" }, { status: 413 });
+  if (bytes.length === 0) return Response.json({ error: "文件是空的。" }, { status: 413 });
   if (saveFile(a.user.id, a.id, bytes) === "full") {
     return Response.json({ error: "云端空间已满（每个账号 500 MB），这个文件只保存在当前浏览器里。" }, { status: 507 });
   }

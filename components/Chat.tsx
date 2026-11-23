@@ -35,6 +35,7 @@ export type DocContext = {
 
 const SUGGESTIONS = [
   "帮我通过聊天把档案填好",
+  "帮我梳理 NIW 的拟从事事业",
   "NIW 和 EB-1A 我更适合哪个？",
   "帮我评估一下我的背景有哪些薄弱点",
   "EB-1A 十项标准我可能满足哪几项？",

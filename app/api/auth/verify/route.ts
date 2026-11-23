@@ -1,11 +1,19 @@
-import { normalizeEmail, sessionCookie, verifyCode } from "@/lib/server/auth";
+import { crossSite, forbidden, normalizeEmail, sessionCookie, verifyCode } from "@/lib/server/auth";
+import { readJson, TooLarge, tooLarge } from "@/lib/server/body";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
+  if (crossSite(req)) return forbidden();
+  let body;
+  try {
+    body = await readJson(req, 4096);
+  } catch (e) {
+    if (e instanceof TooLarge) return tooLarge();
+    throw e;
+  }
   const email = normalizeEmail(body?.email);
-  const code = String(body?.code ?? "").trim();
+  const code = typeof body?.code === "string" || typeof body?.code === "number" ? String(body.code).trim() : "";
   if (!email || !/^\d{6}$/.test(code)) {
     return Response.json({ error: "请输入 6 位数字验证码。" }, { status: 400 });
   }

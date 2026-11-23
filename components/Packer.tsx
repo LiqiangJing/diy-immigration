@@ -18,9 +18,20 @@ type Row = {
   source: "文档" | "文件";
   defaultTitle: string;
   defaultRole: "body" | "exhibit";
+  defaultOn: boolean; // 默认放不放进包里
+  weight: number; // 默认顺序：小的排前面
   format: PacketItem["format"] | null; // null = 这种格式并不进 PDF
   doc?: DocFile;
 };
+
+// 只给申请人自己和 AI 看的工作底稿，默认不放进递交的材料包（用户可以自己勾上）
+const INTERNAL_KINDS = new Set(["Summary of Contributions", "重要引用"]);
+const INTERNAL_SKILLS = new Set(["case-strength-assessor", "petition-audit", "form-guide"]);
+const isInternal = (d: DocFile) => INTERNAL_KINDS.has(d.kind) || Boolean(d.skill && INTERNAL_SKILLS.has(d.skill));
+// 作为证据附在后面的文档；其余的（Cover Letter、Petition Letter 等）是正文
+const isLetter = (d: DocFile) => d.kind === "推荐信" || d.skill === "expert-letter-drafter";
+const EXHIBIT_KINDS = new Set(["论文与引用记录", "Proposed Endeavor 陈述"]);
+const isPetition = (d: DocFile) => d.kind === "Petition Letter" || d.skill === "niw-petition-narrative" || d.skill === "eb1a-petition-narrative";
 
 const EMPTY: PackConfig = { order: [], skip: [], titles: {}, roles: {} };
 
@@ -46,7 +57,10 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
         id: `doc:${d.id}`,
         source: "文档",
         defaultTitle: d.title,
-        defaultRole: d.kind === "推荐信" ? "exhibit" : "body",
+        defaultRole: isLetter(d) || EXHIBIT_KINDS.has(d.kind) ? "exhibit" : "body",
+        defaultOn: !isInternal(d),
+        // 正文里 Cover Letter 在最前，然后是 Petition Letter
+        weight: d.skill === "cover-letter" ? 0 : isPetition(d) ? 1 : 2,
         format: "markdown",
         doc: d,
       }),
@@ -61,6 +75,8 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
           .replace(" [arXiv preprint]", "")
           .replace(/^(Paper|Citing) - /, ""),
         defaultRole: "exhibit",
+        defaultOn: true,
+        weight: 3,
         format:
           f.type === "application/pdf" ? "pdf"
           : f.type === "image/png" ? "png"
@@ -75,11 +91,16 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
     const i = pack.order.indexOf(id);
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
-  const rows = all.map((r, i) => ({ r, i })).sort((a, b) => pos(a.r.id) - pos(b.r.id) || a.i - b.i).map((x) => x.r);
+  const rows = all
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => pos(a.r.id) - pos(b.r.id) || a.r.weight - b.r.weight || a.i - b.i)
+    .map((x) => x.r);
 
   const roleOf = (r: Row) => pack.roles[r.id] ?? r.defaultRole;
   const titleOf = (r: Row) => pack.titles[r.id] ?? r.defaultTitle;
-  const included = (r: Row) => r.format !== null && !pack.skip.includes(r.id);
+  const includedIn = (p: PackConfig, r: Row) =>
+    r.format !== null && !p.skip.includes(r.id) && (r.defaultOn || (p.keep ?? []).includes(r.id));
+  const included = (r: Row) => includedIn(pack, r);
 
   function move(id: string, dir: -1 | 1) {
     const me = rows.find((r) => r.id === id)!;
@@ -146,10 +167,11 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
           disabled={r.format === null}
           aria-label={`包含 ${titleOf(r)}`}
           onChange={() =>
-            setPack((p) => ({
-              ...p,
-              skip: p.skip.includes(r.id) ? p.skip.filter((x) => x !== r.id) : [...p.skip, r.id],
-            }))
+            setPack((p) => {
+              const skip = p.skip.filter((x) => x !== r.id);
+              const keep = (p.keep ?? []).filter((x) => x !== r.id);
+              return includedIn(p, r) ? { ...p, skip: [...skip, r.id], keep } : { ...p, skip, keep: [...keep, r.id] };
+            })
           }
         />
         <span className="pack-no">{no ? `Exhibit ${no}` : roleOf(r) === "body" ? "正文" : "—"}</span>
@@ -160,6 +182,7 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
           onChange={(e) => setPack((p) => ({ ...p, titles: { ...p.titles, [r.id]: e.target.value } }))}
         />
         <span className="tag">{r.source}</span>
+        {!r.defaultOn && !on && <span className="case-meta">工作底稿，默认不递交</span>}
         {r.format === null ? (
           <span className="case-meta">此格式无法并入 PDF</span>
         ) : (
@@ -196,6 +219,7 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
       <p className="group-note">
         把这个案件的文书和材料合成一份 PDF：首页目录 → 正文文书 → List of Exhibits → 各个
         Exhibit（每个前面有分隔页），每页带页眉和页码。标题会出现在目录里，请用英文填写。
+        案件评估、审计报告、表格填写指引、贡献总结、重要引用这些是给你自己和 AI 看的工作底稿，默认不放进去；确实要放的话自己勾上。
       </p>
       {!petitioner.trim() && (
         <div className="notice">还没有填英文姓名，页眉和文件名里会缺少名字。请先到「我的档案」填写。</div>

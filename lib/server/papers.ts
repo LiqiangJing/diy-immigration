@@ -8,9 +8,9 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { s2 } from "./semanticScholar";
+import { sameTitle } from "@/lib/titles";
 
 const MAX_BYTES = 20 * 1024 * 1024;
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** 只允许访问公网上的 https 地址，避免被引到内网 */
 async function publicHttps(raw: string): Promise<URL | null> {
@@ -111,9 +111,7 @@ export async function fetchPaperPdf(title: string, hint?: string): Promise<Paper
     } catch (e) {
       if (!(e instanceof Error && e.message === "404")) throw e;
     }
-    const want = norm(title);
-    const got = norm(paper?.title ?? "");
-    if (!paper || !(got === want || got.startsWith(want) || want.startsWith(got))) paper = undefined;
+    if (!paper || !sameTitle(title, paper.title ?? "")) paper = undefined;
   }
   if (!paper && !arxiv) return null;
 

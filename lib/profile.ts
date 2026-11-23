@@ -109,6 +109,21 @@ export const emptySoc = (): Soc => ({
 export const socFilled = (s: Soc | undefined) =>
   Boolean(s && (s.importance.trim() || s.projects.some((x) => x.title.trim() || x.summary.trim())));
 
+/**
+ * 拟从事事业（Proposed Endeavor）：NIW 的核心，写的是到美国之后打算做什么。
+ * 「为什么重要」那一段和贡献总结里的 importance 是同一份内容，不在这里另存。
+ */
+export type Endeavor = {
+  statement: string; // 一两句话说明要做的事
+  plan: string; // 未来三到五年的具体计划
+  role: string; // 在哪里、以什么身份做
+  progress: string; // 已有的进展和外部支持
+  waiver: string; // 为什么免掉工作邀请和劳工证对美国有利
+};
+export const ENDEAVOR_KEYS = ["statement", "plan", "role", "progress", "waiver"] as const;
+export const emptyEndeavor = (): Endeavor => ({ statement: "", plan: "", role: "", progress: "", waiver: "" });
+export const endeavorFilled = (e: Endeavor | undefined) => Boolean(e && (e.statement.trim() || e.plan.trim()));
+
 export const isSelected = (c: NotableCitation) => c.selected ?? c.importance === "high";
 
 export type Profile = {
@@ -128,6 +143,7 @@ export type Profile = {
   primarySource: string; // 主要数字取自哪个来源；手填或没有记录时为空
   analyses: CitationAnalysis[]; // 各篇论文的重要引用分析
   soc: Soc; // 贡献总结
+  endeavor: Endeavor; // 拟从事事业（NIW）
   citeMap?: CiteMap; // 引用地图
   reviews: string;
   currentPosition: string;
@@ -158,6 +174,7 @@ export const emptyProfile = (): Profile => ({
   primarySource: "",
   analyses: [],
   soc: emptySoc(),
+  endeavor: emptyEndeavor(),
   reviews: "",
   currentPosition: "",
   sameField: "",
@@ -173,9 +190,12 @@ export function normalizeProfile(raw: Record<string, any>): Profile {
   const p = { ...emptyProfile(), ...raw } as Profile & Record<string, any>;
   if (!Array.isArray(p.records)) p.records = [];
   if (!Array.isArray(p.analyses)) p.analyses = [];
-  p.soc = { ...emptySoc(), ...(raw.soc ?? {}) };
+  p.soc = { ...emptySoc(), ...(raw.soc && typeof raw.soc === "object" ? raw.soc : {}) };
   if (!Array.isArray(p.soc.projects)) p.soc.projects = [];
   if (!Array.isArray(p.soc.reviews)) p.soc.reviews = [];
+  const e = raw.endeavor && typeof raw.endeavor === "object" ? raw.endeavor : {};
+  p.endeavor = emptyEndeavor();
+  for (const k of ENDEAVOR_KEYS) if (typeof e[k] === "string") p.endeavor[k] = e[k];
   if (!p.records.length && Array.isArray(raw.publications) && raw.publications.length) {
     const source = raw.scholarSource?.source ?? "OpenAlex";
     p.records = [
@@ -217,8 +237,19 @@ export const primaryPatch = (r: ScholarRecord) => ({
 
 const REL: Record<string, string> = { yes: "相关", no: "不相关", unsure: "不确定是否相关" };
 
-/** 把档案转成发给模型的文字；没填任何内容时返回空串 */
-export function profileToText(p: Profile): string {
+const ENDEAVOR_ZH: Record<(typeof ENDEAVOR_KEYS)[number], string> = {
+  statement: "要做的事",
+  plan: "未来三到五年的计划",
+  role: "在哪里、以什么身份做",
+  progress: "已有的进展和外部支持",
+  waiver: "为什么免掉工作邀请和劳工证对美国有利",
+};
+
+/**
+ * 把档案转成发给模型的文字；没填任何内容时返回空串。
+ * fullEndeavor：把拟从事事业全文带上（在 NIW 案件里聊天、写文书时用）；否则只带那一句话。
+ */
+export function profileToText(p: Profile, fullEndeavor = false): string {
   const lines: string[] = [];
   const add = (label: string, v: string) => {
     if (v.trim()) lines.push(`${label}：${v.trim()}`);
@@ -280,6 +311,21 @@ export function profileToText(p: Profile): string {
     if (soc.awards.trim()) lines.push(`  奖项：${cut(soc.awards.replace(/\n+/g, "；"), 300)}`);
     if (soc.media.trim()) lines.push("  有媒体报道");
     if (soc.openSource.trim()) lines.push("  有开源贡献");
+  }
+  const e = p.endeavor;
+  if (endeavorFilled(e)) {
+    const cut = (s: string, n: number) => (s.trim().length > n ? `${s.trim().slice(0, n)}…` : s.trim());
+    if (fullEndeavor) {
+      lines.push(
+        "拟从事事业（Proposed Endeavor；用户在「我的档案」里填的要点。写 NIW 文书时以它为准，已经填了的内容不要让用户再说一遍，只追问缺的；「要做的事」那句话定稿后在各份文书里原样使用，不要改写）：",
+      );
+      for (const k of ENDEAVOR_KEYS) if (e[k].trim()) lines.push(`  【${ENDEAVOR_ZH[k]}】${cut(e[k], 2500)}`);
+      if (soc.importance.trim()) lines.push(`  【为什么重要（实质价值和国家重要性）】${cut(soc.importance, 2500)}`);
+    } else if (e.statement.trim()) {
+      lines.push(`拟从事事业（NIW 用；完整内容在「我的档案」的「拟从事事业」里）：${cut(e.statement, 500)}`);
+    } else {
+      lines.push("拟从事事业（NIW 用）：用户在档案里写了计划，但还没有定下一句话的说法");
+    }
   }
   if (p.sameField === "yes") lines.push("未来工作：将继续在同一或相近领域工作");
   if (p.sameField === "no")
@@ -414,5 +460,23 @@ export function socReport(p: Profile): string {
   block("Open-source contributions", soc.openSource);
   block("Media coverage", soc.media);
   block("Other accomplishments", soc.other);
+  return out.join("\n");
+}
+
+/** 把拟从事事业整理成一份文档，放进 NIW 案件里；AI 可以在它的基础上写成正式的陈述。没填时返回空串 */
+export function endeavorReport(p: Profile): string {
+  const e = p.endeavor;
+  if (!endeavorFilled(e)) return "";
+  const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
+  const out: string[] = [`# Proposed Endeavor of ${name}`, ""];
+  const section = (title: string, body: string) => {
+    if (body.trim()) out.push(`## ${title}`, "", body.trim(), "");
+  };
+  section("The Proposed Endeavor", e.statement);
+  section("Substantial Merit and National Importance", p.soc.importance);
+  section("Plan for the Next Three to Five Years", e.plan);
+  section("Position and Capacity", e.role);
+  section("Progress to Date and Outside Support", e.progress);
+  section("Why Waiving the Job Offer and Labor Certification Benefits the United States", e.waiver);
   return out.join("\n");
 }

@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NOTICE } from "@/lib/notice";
 
 /**
  * 本地测试用：没有配置 ANTHROPIC_API_KEY 时，通过本机已登录的 Claude Code（订阅）生成回复。
@@ -19,7 +20,7 @@ export function streamViaClaudeCli(opts: {
   content: unknown[]; // 一条 user 消息的 content blocks
   signal: AbortSignal;
   /** 结束时回调一次；拿不到用量时参数为 null */
-  onDone?: (usage: Record<string, number> | null, produced: boolean) => void;
+  onDone?: (usage: Record<string, number> | null, produced: boolean, info?: { aborted: boolean; outTokens: number }) => void;
 }): ReadableStream<Uint8Array> {
   const cwd = join(tmpdir(), "pathway-claude-cli");
   mkdirSync(cwd, { recursive: true });
@@ -47,6 +48,7 @@ export function streamViaClaudeCli(opts: {
   const encoder = new TextEncoder();
 
   let current: ChildProcess | null = null;
+  let cancelled = false;
   const kill = () => {
     if (current && current.exitCode === null) current.kill("SIGTERM");
   };
@@ -58,6 +60,7 @@ export function streamViaClaudeCli(opts: {
       let gotText = false;
       let reported = false;
       let usage: Record<string, number> | null = null;
+      let outChars = 0;
 
       const send = (s: string) => {
         if (!closed) controller.enqueue(encoder.encode(s));
@@ -66,7 +69,7 @@ export function streamViaClaudeCli(opts: {
         if (closed) return;
         closed = true;
         opts.signal.removeEventListener("abort", kill);
-        opts.onDone?.(usage, gotText);
+        opts.onDone?.(usage, gotText, { aborted: opts.signal.aborted || cancelled, outTokens: Math.ceil(outChars / 2) });
         try {
           controller.close();
         } catch {}
@@ -74,7 +77,7 @@ export function streamViaClaudeCli(opts: {
       const fail = (msg: string) => {
         if (reported || opts.signal.aborted) return;
         reported = true;
-        send(`\n\n> ⚠️ ${msg}`);
+        send(`${NOTICE}\n\n> ⚠️ ${msg}`);
       };
 
       const run = (attempt: number) => {
@@ -103,6 +106,7 @@ export function streamViaClaudeCli(opts: {
             }
           } else if (e?.type === "content_block_delta" && e.delta?.type === "text_delta") {
             gotText = true;
+            outChars += e.delta.text.length;
             send(e.delta.text);
           } else if (ev.type === "result" && ev.usage && !ev.is_error) {
             usage = ev.usage;
@@ -145,6 +149,7 @@ export function streamViaClaudeCli(opts: {
       run(0);
     },
     cancel() {
+      cancelled = true;
       kill();
     },
   });

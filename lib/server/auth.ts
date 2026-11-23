@@ -17,9 +17,33 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export function normalizeEmail(raw: unknown): string | null {
-  const email = String(raw ?? "").trim().toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 200 ? email : null;
+  if (typeof raw !== "string" || raw.length > 250) return null; // 先看长度：超长的输入不拿去做正则匹配
+  const email = raw.trim().toLowerCase();
+  if (email.length > 200) return null;
+  const at = email.indexOf("@");
+  if (at < 1 || at !== email.lastIndexOf("@") || /\s/.test(email)) return null;
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf(".");
+  return dot > 0 && domain.length - dot - 1 >= 2 ? email : null;
 }
+
+/**
+ * 是不是别的网站发起的请求。浏览器会在请求里带上 Sec-Fetch-Site；别的网站让用户的浏览器来访问我们的接口时
+ * （比如诱导点一个链接去触发扣费的查询，或者偷偷提交一个登录表单），它的值是 cross-site。
+ * 没有这个头的（老浏览器、支付平台的服务器回调）不算。
+ */
+export function crossSite(req: Request): boolean {
+  const s = req.headers.get("sec-fetch-site");
+  return s !== null && s !== "same-origin" && s !== "none";
+}
+export const forbidden = () => Response.json({ error: "请从本站页面操作。" }, { status: 403 });
+
+// 没配发信服务时把验证码直接显示在页面上，只给本地测试用：正式环境必须显式打开才行，免得漏配发信时任何人都能登录别人的账号
+const devCodeAllowed = () => process.env.NODE_ENV !== "production" || process.env.DEV_LOGIN_CODE === "1";
+
+// 发验证码的次数上限。一个验证码最多试 5 次，所以这也限制了别人能猜多少次
+const HOUR = 3600_000;
+const LIMITS = { emailHour: 5, emailDay: 12, ipHour: 20, ipDay: 60, allHour: 300 };
 
 const sendCode = (email: string, code: string) =>
   sendMail({
@@ -32,13 +56,41 @@ const sendCode = (email: string, code: string) =>
  * 生成并发送验证码。
  * 没有配置发信服务（SMTP_HOST）时不发邮件，而是把验证码直接返回给页面显示——只用于本地测试。
  */
-export async function requestCode(email: string): Promise<{ ok: true; devCode?: string } | { ok: false; error: string }> {
+export async function requestCode(
+  email: string,
+  ip = "unknown",
+): Promise<{ ok: true; devCode?: string } | { ok: false; error: string; sent?: boolean }> {
   const d = db();
   const now = Date.now();
-  const prev = d.prepare("SELECT sent_at FROM login_codes WHERE email = ?").get(email) as { sent_at: number } | undefined;
+  const prev = d.prepare("SELECT sent_at, expires_at FROM login_codes WHERE email = ?").get(email) as
+    | { sent_at: number; expires_at: number }
+    | undefined;
   if (prev && now - prev.sent_at < RESEND_AFTER) {
-    return { ok: false, error: "验证码刚刚发过，请一分钟后再试。" };
+    // sent：刚发的那个还能用，页面可以直接让用户去输
+    return { ok: false, error: "验证码刚刚发过，请查收邮件；一分钟后才能重新发送。", sent: prev.expires_at > now };
   }
+  if (!mailConfigured() && !devCodeAllowed()) {
+    console.error("[auth] 没有配置发信服务（SMTP_HOST），发不了验证码");
+    return { ok: false, error: "登录邮件暂时发不出去，请稍后再试或联系我们。" };
+  }
+  const count = (where: string, arg: string | null, since: number) =>
+    (
+      d.prepare(`SELECT COUNT(*) AS n FROM code_requests WHERE at >= ?${where}`).get(...(arg === null ? [since] : [since, arg])) as {
+        n: number;
+      }
+    ).n;
+  if (count(" AND email = ?", email, now - HOUR) >= LIMITS.emailHour || count(" AND email = ?", email, now - 24 * HOUR) >= LIMITS.emailDay) {
+    return { ok: false, error: "这个邮箱要验证码的次数太多了，请过一段时间再试。设过密码的话可以用密码登录。" };
+  }
+  if (
+    count(" AND ip = ?", ip, now - HOUR) >= LIMITS.ipHour ||
+    count(" AND ip = ?", ip, now - 24 * HOUR) >= LIMITS.ipDay ||
+    count("", null, now - HOUR) >= LIMITS.allHour
+  ) {
+    return { ok: false, error: "现在要验证码的人太多，请稍后再试。" };
+  }
+  d.prepare("INSERT INTO code_requests (email, ip, at) VALUES (?, ?, ?)").run(email, ip, now);
+  d.prepare("DELETE FROM code_requests WHERE at < ?").run(now - 48 * HOUR);
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   d.prepare(
     `INSERT INTO login_codes (email, code_hash, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, 0)
@@ -120,11 +172,12 @@ export function loginWithPassword(email: string, pw: string): { token: string } 
   const u = d.prepare("SELECT id, password_hash, pw_fails, pw_locked_until FROM users WHERE email = ?").get(email) as
     | { id: string; password_hash: string | null; pw_fails: number; pw_locked_until: number }
     | undefined;
-  const wrong = { error: "邮箱或密码不对。没设过密码或忘记了的话，请改用验证码登录。" };
-  if (u && u.pw_locked_until > Date.now()) return { error: "密码输错次数太多，请 15 分钟后再试，或改用验证码登录。" };
-  if (!u || !u.password_hash || pw.length > PW_MAX || !checkPassword(pw, u.password_hash)) {
-    if (!u) hashPassword(pw); // 让「账号不存在」和「密码不对」花的时间差不多
-    if (u?.password_hash) {
+  // 账号不存在、没设密码、密码不对、被锁住，都是同一句话、花同样的时间，免得被人拿来试探哪些邮箱注册过
+  const wrong = { error: "邮箱或密码不对。连续输错 5 次会锁定 15 分钟；没设过密码或忘记了的话，请改用验证码登录。" };
+  const locked = Boolean(u && u.pw_locked_until > Date.now());
+  const match = checkPassword(pw.slice(0, PW_MAX), u?.password_hash ?? DUMMY_HASH) && pw.length <= PW_MAX;
+  if (!u || !u.password_hash || locked || !match) {
+    if (u?.password_hash && !locked) {
       const fails = u.pw_fails + 1;
       d.prepare("UPDATE users SET pw_fails = ?, pw_locked_until = ? WHERE id = ?").run(
         fails >= PW_MAX_FAILS ? 0 : fails,
@@ -138,12 +191,15 @@ export function loginWithPassword(email: string, pw: string): { token: string } 
   return { token: newSession(u.id) };
 }
 
+const DUMMY_HASH = hashPassword("not-a-real-password", "0".repeat(32));
+
 function tokenFrom(req: Request): string | null {
   const m = (req.headers.get("cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([a-f0-9]{64})`));
   return m ? m[1] : null;
 }
 
 export function getUser(req: Request): User | null {
+  if (crossSite(req)) return null;
   const token = tokenFrom(req);
   if (!token) return null;
   const row = db()
@@ -153,7 +209,12 @@ export function getUser(req: Request): User | null {
        WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
     .get(sha(token), Date.now()) as (Omit<User, "hasPassword"> & { hasPassword: number }) | undefined;
-  return row ? { ...row, hasPassword: Boolean(row.hasPassword) } : null;
+  if (!row) return null;
+  // 页面会带上它以为自己登录的是哪个账号。同一个浏览器的另一个标签页换了账号之后，旧标签页的请求对不上，
+  // 这里就当作没登录，免得把一个人的数据存进、把费用记到另一个人的账号上
+  const expect = req.headers.get("x-account");
+  if (expect && expect.trim().toLowerCase() !== row.email) return null;
+  return { ...row, hasPassword: Boolean(row.hasPassword) };
 }
 
 export function logout(req: Request) {

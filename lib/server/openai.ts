@@ -1,7 +1,12 @@
 import OpenAI from "openai";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ResponseInput, ResponseInputMessageContentList } from "openai/resources/responses/responses";
+import { textTokens } from "./credits";
 import type { Usage } from "./credits";
+import { NOTICE } from "@/lib/notice";
+
+/** 结束时除了用量，还告诉调用方是不是用户中途停的、已经输出了大约多少 token（拿不到真实用量时用来估算） */
+export type DoneInfo = { aborted: boolean; outTokens: number };
 
 /**
  * OpenAI 兼容通道（官方 API 或 Azure 上的部署），用 Responses API 流式输出。
@@ -47,7 +52,7 @@ export function streamViaOpenAI(opts: {
   system: string;
   messages: Msg[];
   signal: AbortSignal;
-  onDone: (usage: Usage | null, produced: boolean) => void;
+  onDone: (usage: Usage | null, produced: boolean, info?: DoneInfo) => void;
 }): ReadableStream<Uint8Array> {
   const client = new OpenAI({
     apiKey: process.env.GPT_API_KEY,
@@ -56,11 +61,19 @@ export function streamViaOpenAI(opts: {
   const encoder = new TextEncoder();
   const abort = new AbortController();
   opts.signal.addEventListener("abort", () => abort.abort());
+  let cancelled = false; // 页面那头断开了（用户点了停止、关了页面）
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (s: string) => controller.enqueue(encoder.encode(s));
+      const send = (s: string) => {
+        try {
+          controller.enqueue(encoder.encode(s));
+        } catch {}
+      };
+      // 不是模型写的提示：前面加记号，页面不会把它当成文档或操作的内容
+      const note = (s: string) => send(`${NOTICE}\n\n> ${s}`);
       let produced = false;
+      let outTokens = 0;
       let usage: Usage | null = null;
       try {
         const stream = await client.responses.create(
@@ -76,6 +89,7 @@ export function streamViaOpenAI(opts: {
         for await (const ev of stream) {
           if (ev.type === "response.output_text.delta" || ev.type === "response.refusal.delta") {
             produced = true;
+            outTokens += textTokens(ev.delta);
             send(ev.delta);
           } else if (ev.type === "response.completed" || ev.type === "response.incomplete") {
             const u = ev.response.usage;
@@ -84,27 +98,27 @@ export function streamViaOpenAI(opts: {
               const cached = u.input_tokens_details?.cached_tokens ?? 0;
               const written = u.input_tokens_details?.cache_write_tokens ?? 0;
               usage = {
-                input_tokens: Math.max(0, u.input_tokens - cached - written),
+                input_tokens: Math.max(0, (u.input_tokens ?? 0) - cached - written),
                 cache_read_input_tokens: cached,
                 cache_creation_input_tokens: written,
-                output_tokens: u.output_tokens,
+                output_tokens: u.output_tokens ?? 0,
               };
             }
             if (ev.type === "response.incomplete") {
-              send(
+              note(
                 ev.response.incomplete_details?.reason === "content_filter"
-                  ? "\n\n> 这段内容被平台的内容过滤拦下了，请换一种问法。"
-                  : "\n\n> 回复过长被截断，可以让我「继续」。",
+                  ? "这段内容被平台的内容过滤拦下了，请换一种问法。"
+                  : "回复过长被截断，可以让我「继续」。",
               );
             }
           } else if (ev.type === "response.failed") {
-            send(`\n\n> ⚠️ 模型服务出错：${ev.response.error?.message ?? "未知错误"}`);
+            note(`⚠️ 模型服务出错：${ev.response.error?.message ?? "未知错误"}`);
           } else if (ev.type === "error") {
-            send(`\n\n> ⚠️ 模型服务出错：${ev.message}`);
+            note(`⚠️ 模型服务出错：${ev.message}`);
           }
         }
       } catch (err) {
-        if (!opts.signal.aborted) {
+        if (!opts.signal.aborted && !cancelled) {
           let msg = "请求失败，请稍后重试。";
           if (err instanceof OpenAI.AuthenticationError) msg = "API Key 无效，请检查配置。";
           else if (err instanceof OpenAI.RateLimitError) msg = "请求过于频繁或额度不足，请稍后再试。";
@@ -112,16 +126,17 @@ export function streamViaOpenAI(opts: {
           else if (err instanceof OpenAI.BadRequestError) msg = `请求被拒绝：${err.message}`;
           else if (err instanceof OpenAI.APIError) msg = `服务出错（${err.status ?? "网络"}）：${err.message}`;
           console.error("[openai]", err);
-          send(`\n\n> ⚠️ ${msg}`);
+          note(`⚠️ ${msg}`);
         }
       } finally {
-        opts.onDone(usage, produced);
+        opts.onDone(usage, produced, { aborted: opts.signal.aborted || cancelled, outTokens });
         try {
           controller.close();
         } catch {}
       }
     },
     cancel() {
+      cancelled = true;
       abort.abort();
     },
   });

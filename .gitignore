@@ -6,7 +6,8 @@ image.png
 *.tsbuildinfo
 NIW_Liqiang_Jing.pdf
 *.pdf
-data/
+# 只忽略项目根目录下的本地数据目录（不带斜杠开头的话会把 app/api/data 也忽略掉）
+/data/
 *.pem
 IMG_*
 

@@ -6,7 +6,9 @@ import type { Library } from "@/components/Chat";
 import Guide from "@/components/Guide";
 import Packer from "@/components/Packer";
 import PaperFetch from "@/components/PaperFetch";
+import { endeavorFilled, profileToText } from "@/lib/profile";
 import type { Profile } from "@/lib/profile";
+import type { ProfileTab } from "@/components/Profile";
 import { CHECKLISTS, totalItems } from "@/lib/checklists";
 import { claimsLine } from "@/lib/claims";
 import { workflowsFor } from "@/lib/skills";
@@ -21,13 +23,13 @@ type Props = {
   setCases: React.Dispatch<React.SetStateAction<ImmigrationCase[]>>;
   docs: DocFile[];
   setDocs: React.Dispatch<React.SetStateAction<DocFile[]>>;
-  profileText: string;
   profile: Profile;
-  goProfile: () => void;
+  goProfile: (tab?: ProfileTab) => void;
   petitioner: string;
   citationReport: string; // 由「我的档案」的学术数据生成，可能为空
   notableReport: string; // 由「我的档案」的重要引用分析生成，可能为空
   socReport: string; // 由「我的档案」的贡献总结生成，可能为空
+  endeavorReport: string; // 由「我的档案」的拟从事事业生成，可能为空
   initialOpen?: { caseId?: string; tab: "guide" | "files" }; // 从聊天里点「去查看」过来时，直接打开对应的案件
 };
 
@@ -46,7 +48,15 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-export default function Cases({ cases, setCases, docs, setDocs, profileText, profile, goProfile, petitioner, citationReport, notableReport, socReport, initialOpen }: Props) {
+// 用档案里的内容自动生成的文档：种类 → 生成后的标题
+const REPORT_TITLE: Record<string, string> = {
+  论文与引用记录: "Publication and Citation Record",
+  重要引用: "Notable Citations",
+  "Summary of Contributions": "Summary of Contributions",
+  "Proposed Endeavor 陈述": "Proposed Endeavor",
+};
+
+export default function Cases({ cases, setCases, docs, setDocs, profile, goProfile, petitioner, citationReport, notableReport, socReport, endeavorReport, initialOpen }: Props) {
   const [openId, setOpenId] = useState<string | null>(initialOpen?.caseId ?? null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
@@ -104,10 +114,12 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pro
           ? notableReport
           : kind === "Summary of Contributions"
             ? socReport
-            : "";
+            : kind === "Proposed Endeavor 陈述"
+              ? endeavorReport
+              : "";
     const d: DocFile = {
       id: uid(),
-      title: !report || kind === "Summary of Contributions" ? kind : kind === "重要引用" ? "Notable Citations" : "Publication and Citation Record",
+      title: report ? (REPORT_TITLE[kind] ?? kind) : kind,
       kind,
       content: report,
       updatedAt: Date.now(),
@@ -144,7 +156,8 @@ export default function Cases({ cases, setCases, docs, setDocs, profileText, pro
         library={owner ? caseLibrary(owner, docs, openDoc.id) : undefined}
         contextLine={owner ? caseLine(owner) : undefined}
         caseType={owner?.type}
-        profileText={profileText}
+        profileText={profileToText(profile, owner?.type === "NIW")}
+        endeavorReady={endeavorFilled(profile.endeavor)}
       />
     );
   }

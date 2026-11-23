@@ -9,11 +9,14 @@ import type { CitationAnalysis, CiteCategory, NotableCitation } from "@/lib/prof
 import type { Price, Usage } from "./credits";
 import { completeText } from "./llm";
 import { s2 } from "./semanticScholar";
+import { sameTitle } from "@/lib/titles";
 
 const MAX_CITATIONS = 3000; // 最多翻这么多条引用
 const MAX_CANDIDATES = 80; // 最多把这么多条交给模型判断
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** 人名的比较：去掉重音符号、标点和大小写的差别 */
+const normName = (s: string) =>
+  s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 type Raw = {
   contexts: string[] | null;
@@ -65,7 +68,7 @@ export async function analyzeCitations(
   signal: AbortSignal,
 ): Promise<{ analysis: CitationAnalysis; usage: Usage | null; price: Price | null }> {
   // 1. 按标题找到这篇论文
-  let paper: { paperId: string; title: string; year: number | null; citationCount: number; authors: { authorId: string | null }[] };
+  let paper: { paperId: string; title: string; year: number | null; citationCount: number; authors: { authorId: string | null; name?: string }[] };
   try {
     const m = await s2("/paper/search/match", { query: title, fields: "title,year,citationCount,authors" });
     paper = m.data?.[0];
@@ -74,10 +77,11 @@ export async function analyzeCitations(
     throw e;
   }
   // 标题对不上（比如只匹配到一篇相近的论文）就不继续，免得分析错论文
-  const want = norm(title);
-  const got = norm(paper?.title ?? "");
-  if (!paper || !(got === want || got.startsWith(want) || want.startsWith(got))) throw new Error("NOT_FOUND");
-  const own = new Set(paper.authors.map((a) => a.authorId).filter(Boolean));
+  if (!paper || !sameTitle(title, paper.title ?? "")) throw new Error("NOT_FOUND");
+  const authors = paper.authors ?? [];
+  const own = new Set(authors.map((a) => a.authorId).filter(Boolean));
+  // Semantic Scholar 常把同一个人拆成几个作者 ID，只比 ID 会漏掉自引，所以姓名完全相同的也算同一个人
+  const ownNames = new Set(authors.map((a) => normName(a.name ?? "")).filter((n) => n.length >= 4));
 
   // 2. 取全部引用
   const raw: Raw[] = [];
@@ -93,7 +97,8 @@ export async function analyzeCitations(
   }
 
   // 3. 去掉自引和没有引用原文的，按「值得看」的程度排序后取前若干条
-  const isSelf = (r: Raw) => (r.citingPaper.authors ?? []).some((a) => a.authorId && own.has(a.authorId));
+  const isSelf = (r: Raw) =>
+    (r.citingPaper.authors ?? []).some((a) => (a.authorId && own.has(a.authorId)) || ownNames.has(normName(a.name ?? "")));
   const independent = raw.filter((r) => r.citingPaper?.title && !isSelf(r));
   const usable = independent.filter((r) => (r.contexts ?? []).some((c) => c && c.trim().length > 30));
   const score = (r: Raw) =>

@@ -5,6 +5,8 @@ import CiteMap from "./CiteMap";
 import { useAccount } from "@/lib/account";
 import Notable from "@/components/Notable";
 import Soc from "@/components/Soc";
+import Endeavor from "@/components/Endeavor";
+import type { Only } from "@/components/GuideBox";
 import { DEGREE_TYPES, REVIEW_OPTIONS, primaryPatch, primaryRecord } from "@/lib/profile";
 import type { Degree, Profile as ProfileData, Related, ScholarRecord } from "@/lib/profile";
 import { uid } from "@/lib/types";
@@ -12,8 +14,11 @@ import { uid } from "@/lib/types";
 type Props = {
   profile: ProfileData;
   setProfile: React.Dispatch<React.SetStateAction<ProfileData>>;
-  initialTab?: "basic" | "scholar" | "soc"; // 从聊天里点「去查看」过来时，直接打开对应的那一栏
+  initialTab?: ProfileTab; // 从聊天里点「去查看」过来时，直接打开对应的那一栏
+  only?: Only; // 用户的案件只有一种类型时，只显示那一种的填写说明
 };
+
+export type ProfileTab = "basic" | "scholar" | "soc" | "endeavor";
 
 const newDegree = (type = ""): Degree => ({
   id: uid(),
@@ -131,7 +136,7 @@ const SOURCE_NOTE: Record<string, string> = {
   OpenAlex: "OpenAlex 是按姓名匹配的，和 Google Scholar 的数字通常会有出入。",
 };
 
-export default function Profile({ profile: p, setProfile, initialTab }: Props) {
+export default function Profile({ profile: p, setProfile, initialTab, only = null }: Props) {
   const [candidates, setCandidates] = useState<{ src: Src; list: Candidate[] } | null>(null);
   const [loading, setLoading] = useState<Src | "">("");
   const [scholarError, setScholarError] = useState("");
@@ -235,7 +240,7 @@ export default function Profile({ profile: p, setProfile, initialTab }: Props) {
 
   const set = (patch: Partial<ProfileData>) =>
     setProfile((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
-  const [tab, setTab] = useState<"basic" | "scholar" | "soc">(initialTab ?? "basic");
+  const [tab, setTab] = useState<ProfileTab>(initialTab ?? "basic");
 
   const rootRef = useRef<HTMLDivElement>(null);
   const openTab = (t: typeof tab) => {
@@ -261,6 +266,7 @@ export default function Profile({ profile: p, setProfile, initialTab }: Props) {
             ["basic", "基本资料", "姓名、学历、职位和计划"],
             ["scholar", "学术记录与引用", "Google Scholar、Semantic Scholar、重要引用"],
             ["soc", "贡献总结", "领域、项目、奖项、审稿等"],
+            ["endeavor", "拟从事事业", "NIW 的核心：打算做什么、怎么做"],
           ] as const
         ).map(([t, label, sub]) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => openTab(t)}>
@@ -270,7 +276,8 @@ export default function Profile({ profile: p, setProfile, initialTab }: Props) {
         ))}
       </div>
 
-      {tab === "soc" && <Soc profile={p} setProfile={setProfile} />}
+      {tab === "soc" && <Soc profile={p} setProfile={setProfile} only={only} />}
+      {tab === "endeavor" && <Endeavor profile={p} setProfile={setProfile} only={only} />}
 
       {tab === "basic" && (<>
       <section className="card">

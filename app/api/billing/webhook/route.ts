@@ -31,6 +31,8 @@ export async function POST(req: Request) {
     // 异步到账的付款方式在 completed 时可能还没付清，等 async_payment_succeeded 再入账
     if (session.payment_status === "paid" && pack && userId && session.amount_total === pack.usd * 100) {
       addCredits(userId, pack.credits, `充值 $${pack.usd}`, `stripe:${session.id}`);
+    } else if (session.payment_status === "paid") {
+      console.error("[billing] 已付款的 Stripe 结账没有入账：档位或金额对不上", session.id, session.metadata, session.amount_total);
     }
   }
   return Response.json({ received: true });

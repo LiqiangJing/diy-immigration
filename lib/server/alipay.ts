@@ -64,11 +64,17 @@ export function handleAlipayNotify(params: Record<string, string>): boolean {
   const order = d.prepare("SELECT user_id, pack, amount, status FROM orders WHERE order_no = ?").get(params.out_trade_no) as
     | { user_id: string; pack: string; amount: string; status: string }
     | undefined;
-  if (!order || Number(order.amount) !== Number(params.total_amount)) return false;
+  if (!order || Number(order.amount) !== Number(params.total_amount)) {
+    console.error("[alipay] 验签通过的通知没有处理：订单不存在或金额对不上", params.out_trade_no, params.total_amount, order?.amount);
+    return false;
+  }
 
   if (params.trade_status === "TRADE_SUCCESS" || params.trade_status === "TRADE_FINISHED") {
     const pack = PACKS.find((p) => p.id === order.pack);
-    if (!pack) return false;
+    if (!pack) {
+      console.error("[alipay] 订单的档位已经不存在，没有入账", params.out_trade_no, order.pack);
+      return false;
+    }
     addCredits(order.user_id, pack.credits, `支付宝充值 ¥${order.amount}`, `alipay:${params.out_trade_no}`);
     d.prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE order_no = ?").run(Date.now(), params.out_trade_no);
   }

@@ -2,10 +2,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ApiMessage } from "@/lib/types";
 import { streamViaClaudeCli } from "@/lib/claudeCli";
 import { getUser } from "@/lib/server/auth";
-import { addCredits, chatCost } from "@/lib/server/credits";
+import { readJson, TooLarge } from "@/lib/server/body";
+import { addCredits, chatCost, textTokens } from "@/lib/server/credits";
+import type { Usage } from "@/lib/server/credits";
+import { busy, hold } from "@/lib/server/limits";
 import { llmPrice, llmProvider } from "@/lib/server/llm";
 import { streamViaOpenAI } from "@/lib/server/openai";
 import { skillPrompt } from "@/lib/server/skills";
+import { NOTICE } from "@/lib/notice";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -47,7 +51,7 @@ const docSystem = (title: string, kind: string) => `
 
 const ACTION_SYSTEM = `
 
-你可以替用户操作这个系统：把聊天里得到的信息填进「我的档案」、新建案件、把用户上传的文件存进案件。方法是在回复里输出 <action>JSON</action>，一个标签一个操作，JSON 必须合法。系统会把每个操作显示成一张确认卡片，用户点「应用」后才生效，所以你只是提出操作，不要说「已经填好了」，说「我整理成了下面的卡片，确认无误后点应用」。
+你可以替用户操作这个系统：把聊天里得到的信息填进「我的档案」（基本资料、贡献总结、拟从事事业）、新建案件、把用户上传的文件存进案件。方法是在回复里输出 <action>JSON</action>，一个标签一个操作，JSON 必须合法。系统会把每个操作显示成一张确认卡片，用户点「应用」后才生效，所以你只是提出操作，不要说「已经填好了」，说「我整理成了下面的卡片，确认无误后点应用」。
 
 可用的操作（只写用得到的字段）：
 
@@ -63,15 +67,27 @@ const ACTION_SYSTEM = `
 - 项目的 summary 用第一人称、外行能懂的话，按「要解决什么问题 → 怎么做的 → 结果」写，200 词左右；outputs 每行一项；impact 最多三条。用英文写，除非用户用中文给了原话且没要求翻译。
 - awards、media 每行一条。media 写「媒体名称，标题，日期，链接」。
 
-3. 新建案件
+3. 拟从事事业（Proposed Endeavor，只有申请 NIW 才需要）
+<action>{"type":"endeavor","set":{"statement":"","plan":"","role":"","progress":"","waiver":""},"append":{"progress":""}}</action>
+- set 覆盖、append 追加，规则和贡献总结一样；两者可用的字段相同：statement、plan、role、progress、waiver。
+- statement：一到两句英文，说的是用户到美国后具体要做的事，不是职位，也不是领域。常用句式是 "My proposed endeavor is to [用什么方法] [做什么] in order to [对美国有什么用]"。要具体到能拿出证据支撑，又不能绑死在某一家雇主或某一个项目上；要和用户已有的成果接得上。这句话定下来后会原样用在所有文书里，所以用户还没想清楚时，先给两三个写法，说明各自强调什么、需要什么证据，让他选；他明确选定之后才输出操作，不要替他定。
+- plan：未来三到五年的两到三个具体项目或阶段，每个写清做什么、怎么做、给谁用、预期产出、大致时间，以及靠什么来做（经费、合作方、设备、数据）。
+- role：打算在哪里、以什么身份做（继续现职、去某类机构、创业、独立研究）。NIW 不要求有雇主，但要说清落脚点。
+- progress：和这项事业直接相关的已有进展和外部支持，每行一条（谁在用、谁在支持、经费、投资、合作）。
+- waiver：为什么免掉工作邀请和劳工证对美国有利，两三段。
+- 这项事业为什么重要（对美国的意义）不在这里，填在贡献总结的 importance 里。
+- 计划、合作、经费、职位这些都是事实，只能来自用户说的话，不要替用户设想一个计划填进去。用户只申请 EB-1A 时不要主动问这一部分。
+
+4. 新建案件
 <action>{"type":"case","name":"案件名称","caseType":"NIW|EB-1A"}</action>
 
-4. 把用户在这次对话里上传的文件存进案件（案件里的文件打包时会自动编成 Exhibit）
+5. 把用户在这次对话里上传的文件存进案件（案件里的文件打包时会自动编成 Exhibit）
 <action>{"type":"saveFile","file":"文件名，和用户上传的一致","case":"案件名称","title":"Exhibit 标题，英文，例如 Media Coverage - Forbes, 2025"}</action>
 
 什么时候用：
 - 用户说了可以填进档案的事实，或者上传了简历、个人主页、论文列表等材料时，主动整理成操作，不用等用户开口。一次把能确定的都填上，同一类操作合并成一个标签。
 - 用户说「帮我填档案」但信息不够时，按下面给出的「还没填的项」一次问 3–5 个最重要的问题，拿到回答后再输出操作。
+- 用户说「帮我梳理拟从事事业」或者在讨论 NIW 打算做什么时，先看档案里已有的成果，再问他接下来具体想做什么、在哪里做、已经有哪些进展和支持；一次问 3–4 个问题，拿到回答后整理成拟从事事业的操作。
 - 用户上传了媒体报道、奖状、审稿邀请信这类证据文件时，建议存进案件并起一个 Exhibit 标题；还没有案件就先提出新建案件。同时把对应的信息追加到贡献总结里（比如 media）。
 
 底线：
@@ -86,7 +102,9 @@ type ImageType = (typeof IMAGE_TYPES)[number];
 function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
   const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
   for (const a of m.attachments ?? []) {
-    if (!a.data) {
+    if (a.data === "") {
+      blocks.push({ type: "text", text: `[附件「${a.name}」是空的，里面没有内容]` });
+    } else if (!a.data) {
       blocks.push({
         type: "text",
         text: `[用户此前上传过附件「${a.name}」，其内容已不在当前会话中；如需分析请让用户重新上传]`,
@@ -111,6 +129,46 @@ function toContent(m: ApiMessage): Anthropic.Beta.BetaContentBlockParam[] {
   return blocks;
 }
 
+// 一次请求（含所有附件）的大小上限。附件是 base64，所以大约对应 60 MB 的原始文件
+const MAX_BODY = 80 * 1024 * 1024;
+
+/** 把页面发来的消息整理成固定的形状；不认识的字段、类型不对的都丢掉 */
+function cleanMessages(raw: unknown): ApiMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ApiMessage[] = [];
+  for (const m of raw.slice(-400)) {
+    if (!m || typeof m !== "object") continue;
+    const role = (m as ApiMessage).role === "assistant" ? "assistant" : (m as ApiMessage).role === "user" ? "user" : null;
+    if (!role) continue;
+    const text = typeof (m as ApiMessage).text === "string" ? (m as ApiMessage).text : "";
+    const attachments = Array.isArray((m as ApiMessage).attachments)
+      ? (m as ApiMessage).attachments!
+          .filter((a) => a && typeof a === "object")
+          .slice(0, 60)
+          .map((a) => ({
+            name: String(a.name ?? "附件").slice(0, 300),
+            type: String(a.type ?? ""),
+            data: typeof a.data === "string" ? a.data : undefined,
+          }))
+      : undefined;
+    out.push({ role, text, attachments });
+  }
+  return out;
+}
+
+/** 用户中途停止时拿不到真实用量，按请求的大小估一下输入有多少 token（PDF 和图片只能粗估，宁少勿多） */
+function estimateInput(system: string, messages: Anthropic.Beta.BetaMessageParam[]): number {
+  let n = textTokens(system);
+  for (const m of messages) {
+    for (const b of m.content as Anthropic.Beta.BetaContentBlockParam[]) {
+      if (b.type === "text") n += textTokens(b.text);
+      else if (b.type === "document" && b.source?.type === "base64") n += Math.min(100_000, Math.ceil((b.source.data.length * 0.75) / 100));
+      else if (b.type === "image") n += 800;
+    }
+  }
+  return n;
+}
+
 export async function POST(req: Request) {
   const user = getUser(req);
   if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
@@ -120,40 +178,37 @@ export async function POST(req: Request) {
   const provider = llmProvider();
   const price = llmPrice(provider);
 
-  let charged = false;
-  // produced = 这次有没有真的给出回复；后端出错、什么都没生成时不扣费
-  const charge = (usage: Parameters<typeof chatCost>[0], produced = true) => {
-    if (charged) return;
-    charged = true;
-    if (produced) addCredits(user.id, -chatCost(usage, price), "聊天");
-  };
-
   let body: {
-    messages?: ApiMessage[];
-    profile?: string;
-    actions?: string; // 允许模型提出操作时，这里是档案和案件的现状（见 lib/actions.ts 的 worldText）
-    doc?: { title?: string; kind?: string; content?: string; skill?: string; caseType?: string };
-  };
+    messages?: unknown;
+    profile?: unknown;
+    actions?: unknown; // 允许模型提出操作时，这里是档案和案件的现状（见 lib/actions.ts 的 worldText）
+    doc?: { title?: unknown; kind?: unknown; content?: unknown; skill?: unknown; caseType?: unknown };
+  } | null;
   try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "请求格式错误" }, { status: 400 });
+    body = await readJson(req, MAX_BODY);
+  } catch (e) {
+    if (e instanceof TooLarge) {
+      return Response.json({ error: "这次对话里带的文件加起来太大了，请去掉一些文件，或者新开一个对话。" }, { status: 413 });
+    }
+    throw e;
   }
+  if (!body || typeof body !== "object") return Response.json({ error: "请求格式错误" }, { status: 400 });
 
-  const messages: Anthropic.Beta.BetaMessageParam[] = (body.messages ?? [])
+  const messages: Anthropic.Beta.BetaMessageParam[] = cleanMessages(body.messages)
     .map((m) => ({ role: m.role, content: toContent(m) }))
     .filter((m) => m.content.length > 0);
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return Response.json({ error: "消息为空" }, { status: 400 });
   }
 
-  const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 8000) : "";
-  const doc = body.doc && typeof body.doc.content === "string" ? body.doc : null;
+  // 上限留得宽一些：在 NIW 案件里会带上拟从事事业的全文，后面还跟着案件的申报条件，不能被截掉
+  const profile = typeof body.profile === "string" ? body.profile.trim().slice(0, 24000) : "";
+  const doc = body.doc && typeof body.doc === "object" && typeof body.doc.content === "string" ? (body.doc as { title?: unknown; kind?: unknown; content: string; skill?: unknown; caseType?: unknown }) : null;
   if (doc) {
     const last = messages[messages.length - 1].content as Anthropic.Beta.BetaContentBlockParam[];
     last.push({
       type: "text",
-      text: doc.content!.trim()
+      text: doc.content.trim()
         ? `<current_document>\n${doc.content}\n</current_document>`
         : "<current_document>（文档目前是空的）</current_document>",
     });
@@ -161,7 +216,7 @@ export async function POST(req: Request) {
   const base = doc
     ? SYSTEM +
       docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100)) +
-      skillPrompt(doc.skill, doc.caseType)
+      skillPrompt(typeof doc.skill === "string" ? doc.skill : undefined, typeof doc.caseType === "string" ? doc.caseType : undefined)
     : typeof body.actions === "string"
       ? `${SYSTEM}${ACTION_SYSTEM}\n\n系统现状：\n${body.actions.slice(0, 3000)}`
       : SYSTEM;
@@ -169,33 +224,57 @@ export async function POST(req: Request) {
     ? `${base}\n\n以下是用户在「我的档案」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`
     : base;
 
+  // 同一个用户同时最多两个回复在生成（主聊天一个、文档里一个）。费用是回复结束后才扣的，不限的话一口气发很多请求能把余额刷成很大的负数
+  const release = hold(`chat:${user.id}`, 2);
+  if (!release) return busy("上一条回复");
+
+  let charged = false;
+  // produced = 这次有没有真的给出回复；后端出错、什么都没生成时不扣费
+  const charge = (usage: Usage | null, produced = true, info?: { aborted: boolean; outTokens: number }) => {
+    if (charged) return;
+    charged = true;
+    release();
+    if (!usage && info?.aborted) {
+      // 用户中途停止：模型服务照样按已经处理的内容向我们收费，但不会告诉我们用量。
+      // 按请求的大小和已经输出的字数估算；输入按最便宜的缓存价算，估出来只会比实际少
+      usage = { cache_read_input_tokens: estimateInput(system, messages), output_tokens: info.outTokens };
+      produced = true;
+    }
+    if (produced) addCredits(user.id, -chatCost(usage, price), "聊天");
+  };
+
   const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
 
-  if (provider === "openai") {
-    return new Response(
-      streamViaOpenAI({
-        system,
-        messages: messages as { role: "user" | "assistant"; content: Anthropic.Beta.BetaContentBlockParam[] }[],
-        signal: req.signal,
-        onDone: charge,
-      }),
-      { headers },
-    );
-  }
+  try {
+    if (provider === "openai") {
+      return new Response(
+        streamViaOpenAI({
+          system,
+          messages: messages as { role: "user" | "assistant"; content: Anthropic.Beta.BetaContentBlockParam[] }[],
+          signal: req.signal,
+          onDone: charge,
+        }),
+        { headers },
+      );
+    }
 
-  // 走本机 Claude Code 订阅登录（仅供本地测试）
-  if (provider === "cli") {
-    // 订阅通道一次只接收一条用户消息，所以把历史对话展开进同一条消息
-    const content: Anthropic.Beta.BetaContentBlockParam[] = [];
-    messages.forEach((m, i) => {
-      const last = i === messages.length - 1;
-      const who = m.role === "user" ? "用户" : "助手";
-      content.push({ type: "text", text: last ? "【当前消息 · 用户】" : `【此前对话 · ${who}】` });
-      content.push(...(m.content as Anthropic.Beta.BetaContentBlockParam[]));
-    });
-    return new Response(streamViaClaudeCli({ system, content, signal: req.signal, onDone: charge }), {
-      headers,
-    });
+    // 走本机 Claude Code 订阅登录（仅供本地测试）
+    if (provider === "cli") {
+      // 订阅通道一次只接收一条用户消息，所以把历史对话展开进同一条消息
+      const content: Anthropic.Beta.BetaContentBlockParam[] = [];
+      messages.forEach((m, i) => {
+        const last = i === messages.length - 1;
+        const who = m.role === "user" ? "用户" : "助手";
+        content.push({ type: "text", text: last ? "【当前消息 · 用户】" : `【此前对话 · ${who}】` });
+        content.push(...(m.content as Anthropic.Beta.BetaContentBlockParam[]));
+      });
+      return new Response(streamViaClaudeCli({ system, content, signal: req.signal, onDone: charge }), {
+        headers,
+      });
+    }
+  } catch (e) {
+    release();
+    throw e;
   }
 
   const client = new Anthropic();
@@ -219,19 +298,26 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const out = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (s: string) => controller.enqueue(encoder.encode(s));
+      const send = (s: string) => {
+        try {
+          controller.enqueue(encoder.encode(s));
+        } catch {}
+      };
+      const note = (s: string) => send(`${NOTICE}\n\n> ${s}`);
       let produced = false;
+      let outTokens = 0;
       try {
         stream.on("text", (delta) => {
           produced = true;
+          outTokens += textTokens(delta);
           send(delta);
         });
         const final = await stream.finalMessage();
         charge(final.usage);
         if (final.stop_reason === "refusal") {
-          send("\n\n> 这个请求被模型拒绝了，请换一种问法。");
+          note("这个请求被模型拒绝了，请换一种问法。");
         } else if (final.stop_reason === "max_tokens") {
-          send("\n\n> 回复过长被截断，可以让我「继续」。");
+          note("回复过长被截断，可以让我「继续」。");
         }
       } catch (err) {
         if (req.signal.aborted) return;
@@ -241,9 +327,9 @@ export async function POST(req: Request) {
         else if (err instanceof Anthropic.BadRequestError) msg = `请求被拒绝：${err.message}`;
         else if (err instanceof Anthropic.APIError) msg = `服务出错（${err.status ?? "网络"}）：${err.message}`;
         console.error("[api/chat]", err);
-        send(`\n\n> ⚠️ ${msg}`);
+        note(`⚠️ ${msg}`);
       } finally {
-        charge(null, produced); // 中途停止时拿不到用量，按最低数额扣；完全没生成则不扣
+        charge(null, produced, { aborted: req.signal.aborted, outTokens }); // 正常结束时上面已经扣过，这里不会重复
         try {
           controller.close();
         } catch {}

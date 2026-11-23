@@ -3,8 +3,9 @@
 import { isPaperFile } from "@/components/PaperFetch";
 import { claimsReady, EB1A_CRITERIA, EXCEPTIONAL_CRITERIA, MIN_CLAIMS } from "@/lib/claims";
 import type { Claim } from "@/lib/claims";
-import { isSelected, socFilled } from "@/lib/profile";
+import { endeavorFilled, isSelected, socFilled } from "@/lib/profile";
 import type { Profile } from "@/lib/profile";
+import type { ProfileTab } from "@/components/Profile";
 import { workflowById } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
 import type { DocFile, ImmigrationCase } from "@/lib/types";
@@ -18,7 +19,7 @@ type Props = {
   onCreate: (kind: string) => void;
   onOpenDoc: (id: string) => void;
   goTab: (t: "files" | "pack") => void;
-  goProfile: () => void;
+  goProfile: (tab?: ProfileTab) => void;
 };
 
 type Action = { label: string; run: () => void };
@@ -53,7 +54,8 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
   const openDocs = (list: DocFile[]): Action[] =>
     list.slice(0, 3).map((d) => ({ label: `打开「${d.title}」`, run: () => onOpenDoc(d.id) }));
   const upload: Action = { label: "去上传文件", run: () => goTab("files") };
-  const toProfile: Action = { label: "去「我的档案」", run: goProfile };
+  const toProfile: Action = { label: "去「我的档案」", run: () => goProfile() };
+  const toTab = (tab: ProfileTab, label: string): Action => ({ label, run: () => goProfile(tab) });
 
   const assess = bySkill("case-strength-assessor");
   const letters = [...new Set([...bySkill("expert-letter-drafter"), ...byKind("推荐信")])];
@@ -130,8 +132,24 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       optional: true,
       done: p.records.length > 0,
       have: p.records.map((r) => r.source).join("、"),
-      actions: [toProfile],
+      actions: [toTab("scholar", "去「学术记录与引用」")],
     },
+    ...(c.type === "NIW"
+      ? [
+          {
+            id: "endeavor",
+            title: "确定拟从事事业（Proposed Endeavor）",
+            desc: "说清楚你到美国之后具体要做什么、解决什么问题、打算怎么做。NIW 的三项要求都围绕它展开，所以先把它定下来。在「我的档案」的「拟从事事业」里按提示填好，再回到这里生成「Proposed Endeavor 陈述」文档；之后 AI 写申请信和推荐信都以它为准。",
+            done: endeavor.length > 0,
+            have: endeavorFilled(p.endeavor) && !endeavor.length ? "档案里已经填了，还没有生成文档" : "",
+            actions: endeavor.length
+              ? openDocs(endeavor)
+              : endeavorFilled(p.endeavor)
+                ? [{ label: "生成「Proposed Endeavor 陈述」文档", run: () => onCreate("Proposed Endeavor 陈述") }, toTab("endeavor", "去「拟从事事业」")]
+                : [toTab("endeavor", "去填「拟从事事业」")],
+          } satisfies Step,
+        ]
+      : []),
     {
       id: "soc",
       title: "写贡献总结",
@@ -141,8 +159,8 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       actions: byKind("Summary of Contributions").length
         ? openDocs(byKind("Summary of Contributions"))
         : socFilled(p.soc)
-          ? [{ label: "生成「Summary of Contributions」文档", run: () => onCreate("Summary of Contributions") }, toProfile]
-          : [toProfile],
+          ? [{ label: "生成「Summary of Contributions」文档", run: () => onCreate("Summary of Contributions") }, toTab("soc", "去「贡献总结」")]
+          : [toTab("soc", "去填「贡献总结」")],
     },
     {
       id: "materials",
@@ -184,22 +202,9 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       actions: notable.length
         ? openDocs(notable)
         : picked
-          ? [{ label: "生成「重要引用」文档", run: () => onCreate("重要引用") }, toProfile]
-          : [toProfile],
+          ? [{ label: "生成「重要引用」文档", run: () => onCreate("重要引用") }, toTab("scholar", "去「学术记录与引用」")]
+          : [toTab("scholar", "去「学术记录与引用」")],
     },
-    ...(c.type === "NIW"
-      ? [
-          {
-            id: "endeavor",
-            title: "写 Proposed Endeavor 陈述",
-            desc: "说清楚你来美国之后具体要做什么、解决什么问题。NIW 三个要素都围绕它展开，先把它定下来。",
-            done: endeavor.length > 0,
-            actions: endeavor.length
-              ? openDocs(endeavor)
-              : [{ label: "新建 Proposed Endeavor 陈述", run: () => onCreate("Proposed Endeavor 陈述") }],
-          } satisfies Step,
-        ]
-      : []),
     {
       id: "letters",
       title: "准备推荐信",

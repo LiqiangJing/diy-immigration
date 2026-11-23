@@ -37,6 +37,7 @@ export type DocFile = {
 export type PackConfig = {
   order: string[]; // 材料顺序
   skip: string[]; // 不放进包里的
+  keep?: string[]; // 默认不放进包里（工作底稿）、但用户勾选了要放的
   titles: Record<string, string>; // 目录里显示的标题
   roles: Record<string, "body" | "exhibit">;
 };
