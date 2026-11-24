@@ -40,43 +40,63 @@ check("auth: invalid email rejected", r.status_code == 400, r.text)
 r = requests.post(f"{BASE}/api/auth/request", data="garbage", headers={"Content-Type": "application/json"})
 check("auth: garbage body rejected", r.status_code == 400, r.text)
 e1 = mail()
-r = requests.post(f"{BASE}/api/auth/request", json={"email": e1.upper()})
+s1 = requests.Session()  # 验证码绑在申请它的那个浏览器上，所以申请和输入要用同一个会话
+r = s1.post(f"{BASE}/api/auth/request", json={"email": e1.upper()})
 check("auth: code issued (dev)", r.status_code == 200 and len(r.json().get("devCode", "")) == 6, r.text)
 code = r.json()["devCode"]
-r2 = requests.post(f"{BASE}/api/auth/request", json={"email": e1})
+ck = r.headers.get("set-cookie", "")
+check("auth: the requesting browser gets a short-lived HttpOnly marker", "diy_login=" in ck and "HttpOnly" in ck and "Path=/api/auth" in ck and "Max-Age=900" in ck, ck)
+r2 = s1.post(f"{BASE}/api/auth/request", json={"email": e1})
 check("auth: resend within 60s blocked", r2.status_code == 429, r2.text)
 wrong = "000000" if code != "000000" else "111111"
-r = requests.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": wrong})
+r = s1.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": wrong})
 check("auth: wrong code rejected", r.status_code == 400 and "不对" in r.text, r.text)
-r = requests.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": "12345"})
+r = s1.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": "12345"})
 check("auth: malformed code rejected", r.status_code == 400, r.text)
-s1 = requests.Session()
+# 别的浏览器拿着正确的验证码也登录不了，而且不管试多少次都不会把这个验证码试废
+other = requests.Session()
+r = other.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code})
+check("auth: the right code from another browser is refused", r.status_code == 400 and "这个浏览器" in r.text and "diy_session" not in other.cookies, r.text)
+for i in range(7):
+    other.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": wrong})
+r = requests.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code}, cookies={"diy_login": "a" * 64})
+check("auth: a made-up browser marker is refused", r.status_code == 400, r.text)
+check("auth: guesses from other browsers do not use up the attempts", db("select attempts from login_codes where email=?", (e1,)) == [(1,)], db("select attempts from login_codes where email=?", (e1,)))
+# 别人（另一个 IP）替这个邮箱再要一个验证码：自己手里的那个照样能用
+r = requests.post(f"{BASE}/api/auth/request", json={"email": e1}, headers={"x-forwarded-for": "198.51.100.7"})
+check("auth: someone else can request a code for the same address", r.status_code == 200, r.text)
 r = s1.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code})
 check("auth: correct code logs in (case-insensitive email)", r.status_code == 200 and "diy_session" in s1.cookies, r.text)
 ck = r.headers.get("set-cookie", "")
 check("auth: cookie is HttpOnly + SameSite", "HttpOnly" in ck and "SameSite=Lax" in ck, ck)
+check("auth: login marks the browser as known and clears the code marker", "diy_device" in s1.cookies and "diy_login" not in s1.cookies, list(s1.cookies.keys()))
 me = s1.get(f"{BASE}/api/me").json()
 check("auth: /api/me shows user with signup bonus 200", me["user"] and me["user"]["email"] == e1 and me["user"]["credits"] == 200, json.dumps(me["user"]))
 check("auth: ledger has signup bonus", me["history"] and me["history"][0]["delta"] == 200 and me["history"][0]["reason"] == "注册赠送", json.dumps(me["history"]))
-r = requests.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code})
+r = s1.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code})
 check("auth: code is single-use", r.status_code == 400, r.text)
 
 # 5 次输错后锁定，即使第 6 次是对的
-e2 = mail()
-code2 = requests.post(f"{BASE}/api/auth/request", json={"email": e2}).json()["devCode"]
+e2 = mail(); s2 = requests.Session()
+code2 = s2.post(f"{BASE}/api/auth/request", json={"email": e2}).json()["devCode"]
 bad = "999999" if code2 != "999999" else "888888"
 for i in range(5):
-    requests.post(f"{BASE}/api/auth/verify", json={"email": e2, "code": bad})
-r = requests.post(f"{BASE}/api/auth/verify", json={"email": e2, "code": code2})
+    s2.post(f"{BASE}/api/auth/verify", json={"email": e2, "code": bad})
+r = s2.post(f"{BASE}/api/auth/verify", json={"email": e2, "code": code2})
 check("auth: locked after 5 wrong attempts even with right code", r.status_code == 400 and "次数过多" in r.text, r.text)
 check("auth: no user created for failed login", db("select count(*) from users where email=?", (e2,))[0][0] == 0)
 
 # 过期的验证码
-e3 = mail()
-code3 = requests.post(f"{BASE}/api/auth/request", json={"email": e3}).json()["devCode"]
+e3 = mail(); s3 = requests.Session()
+code3 = s3.post(f"{BASE}/api/auth/request", json={"email": e3}).json()["devCode"]
 db("update login_codes set expires_at=? where email=?", (int(time.time() * 1000) - 1000, e3))
-r = requests.post(f"{BASE}/api/auth/verify", json={"email": e3, "code": code3})
+r = s3.post(f"{BASE}/api/auth/verify", json={"email": e3, "code": code3})
 check("auth: expired code rejected", r.status_code == 400 and "过期" in r.text, r.text)
+# 用一个邮箱要的验证码不能拿去登录另一个邮箱
+e4 = mail(); s4 = requests.Session()
+code4 = s4.post(f"{BASE}/api/auth/request", json={"email": e4}, headers={"x-forwarded-for": "198.51.100.8"}).json()["devCode"]
+r = s4.post(f"{BASE}/api/auth/verify", json={"email": e1, "code": code4})
+check("auth: a code for one address cannot log in to another", r.status_code == 400 and "diy_session" not in s4.cookies, r.text)
 
 # 再次登录同一邮箱不重复送 credit
 db("update login_codes set sent_at=0 where email=?", (e1,))

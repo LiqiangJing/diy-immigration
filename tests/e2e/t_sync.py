@@ -8,11 +8,23 @@ def login_as(page, email):
     page.goto(BASE + "/")
     page.locator(".account-box button", has_text="登录 / 注册").first.click()
     page.locator(".modal input[type=email]").fill(email)
-    db("update login_codes set sent_at=0 where email=?", (email,))
+    db("update login_codes set sent_at=0 where email=?", (email,)); db("delete from code_requests where email=?", (email,))  # 测试里同一个账号反复登录，别撞上次数上限
     page.get_by_role("button", name="发送验证码").click()
     page.locator(".modal input[inputmode=numeric]").fill(page.locator(".dev-code strong").inner_text())
     page.locator(".modal button[type=submit]").click()
     page.locator(".account-email", has_text=email).wait_for()
+
+# 这个浏览器里缓存着哪些文件（IndexedDB；kv: 开头的是同步用的记录，不是文件）
+IDB_KEYS = """() => new Promise((res, rej) => {
+  const r = indexedDB.open('diy-immigration', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('files');
+  r.onerror = () => rej(r.error);
+  r.onsuccess = () => {
+    const q = r.result.transaction('files').objectStore('files').getAllKeys();
+    q.onsuccess = () => res(q.result.filter((k) => !String(k).startsWith('kv:')));
+    q.onerror = () => rej(q.error);
+  };
+})"""
 
 def synced(page, timeout=15000):
     page.locator(".sync-state.ok").wait_for(timeout=timeout)
@@ -120,8 +132,23 @@ with sync_playwright() as p:
     time.sleep(3)
     check("sync: returning to a background tab picks up changes made elsewhere", ls(B, "profile")["field"] == "Changed while B was in background", ls(B, "profile")["field"])
 
-    # ---------- 退出登录后，这台设备上不再显示账号里的内容 ----------
+    # ---------- 退出登录后，这台设备上不再显示账号里的内容，上传的文件也不留在浏览器里 ----------
     synced(B)
+    # 先在 B 上往案件里传两个文件：一个正常传到云端，另一个的上传一直失败（只有这个浏览器里有）
+    FX = os.path.join(S, "fixtures")
+    nav(B, "案件"); B.locator(".case-card").first.click()
+    B.locator(".tabs button", has_text="文件").click()
+    B.locator(".dropzone input[type=file]").set_input_files(os.path.join(FX, "cv.pdf"))
+    B.locator(".file-list li", has_text="cv.pdf").wait_for(); time.sleep(2.5)
+    B.route("**/api/files/*", lambda r: r.fulfill(status=403, body="{}") if r.request.method == "PUT" else r.continue_())
+    B.locator(".dropzone input[type=file]").set_input_files(os.path.join(FX, "notes.txt"))
+    B.locator(".file-list li", has_text="notes.txt").wait_for(); time.sleep(3); synced(B)
+    ids = {f["name"]: f["id"] for c in ls(B, "cases") for f in c.get("files", [])}
+    on_server = lambda: {r[0] for r in db("select file_id from user_files f join users u on u.id=f.user_id where u.email=?", (email,))}
+    check("files: one upload reached the cloud, the other did not", ids["cv.pdf"] in on_server() and ids["notes.txt"] not in on_server(), (ids, on_server()))
+    cached = sorted(B.evaluate(IDB_KEYS))
+    check("files: both are cached in this browser while logged in", sorted(ids.values()) == cached, cached)
+    B.locator("button.back").click()
     B.locator(".account-box button", has_text=email).click()
     B.get_by_role("button", name="退出登录").click()
     B.locator(".empty h3", has_text="还没有登录").wait_for()
@@ -129,9 +156,20 @@ with sync_playwright() as p:
     nav(B, "案件")
     check("logout: cases no longer shown on this device", B.locator(".case-card").count() == 0, B.locator(".case-card").count())
     check("logout: profile cleared from this browser", not (ls(B, "profile") or {}).get("firstName"), (ls(B, "profile") or {}).get("firstName"))
-    # 再登录，数据回来
+    cached = B.evaluate(IDB_KEYS)
+    check("logout: a file that is safely in the cloud is removed from this browser", ids["cv.pdf"] not in cached, cached)
+    check("logout: a file the cloud does not have yet is kept in this browser", ids["notes.txt"] in cached, cached)
+    check("logout: the cloud copy is untouched", ids["cv.pdf"] in on_server())
+    B.unroute("**/api/files/*")
+    # 再登录，数据回来；刚才没传上去的文件自动补传，清掉的那个能从云端取回
     login_as(B, email); synced(B)
     check("login: data comes back from the cloud after logging in again", ls(B, "profile")["firstName"] == "Jane" and len(ls(B, "cases")) >= 3)
+    for _ in range(20):
+        if ids["notes.txt"] in on_server(): break
+        time.sleep(0.5)
+    check("login: the file that was only in this browser is uploaded after logging in again", ids["notes.txt"] in on_server())
+    got = B.evaluate("async (id) => { const r = await fetch('/api/files/' + id); return [r.status, (await r.arrayBuffer()).byteLength]; }", ids["cv.pdf"])
+    check("login: the removed file can be fetched back from the cloud", got[0] == 200 and got[1] == os.path.getsize(os.path.join(FX, "cv.pdf")), got)
 
     # ---------- 同一个浏览器换一个账号：互不串 ----------
     B.locator(".account-box button", has_text=email).click()

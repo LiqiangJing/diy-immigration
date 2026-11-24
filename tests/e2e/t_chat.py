@@ -137,8 +137,10 @@ with sync_playwright() as p:
     page.get_by_role("button", name="全部应用").click()
     page.locator(".action-card.pending").wait_for(state="detached", timeout=15000)
     cases = json.loads(LS(page, 'pathway.cases'))
-    check("actions: case created and file stored in it", len(cases) == 1 and cases[0]["name"] == "Battery NIW" and cases[0]["type"] == "NIW" and len(cases[0]["files"]) == 1, cases)
-    fname = cases[0]["files"][0]["name"] if cases and cases[0]["files"] else ""
+    # 前面几步里模型有时会顺手提议建一个案件，所以这里按名字找，不假设只有这一个
+    made = [c for c in cases if c["name"] == "Battery NIW"]
+    check("actions: case created and file stored in it", len(made) == 1 and made[0]["type"] == "NIW" and len(made[0]["files"]) == 1 and all(not c.get("files") for c in cases if c["name"] != "Battery NIW"), cases)
+    fname = made[0]["files"][0]["name"] if made and made[0]["files"] else ""
     check("actions: stored file is named by its exhibit title and keeps the extension", fname.endswith(".md") and fname != "media.md" and re.search(r"[A-Za-z]", fname), fname)
     saved = json.loads(LS(page, 'pathway.profile'))
     check("actions: media coverage appended to contributions", "TechDaily" in saved["soc"]["media"], saved["soc"]["media"])

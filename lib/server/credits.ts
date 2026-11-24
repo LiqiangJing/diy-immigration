@@ -17,7 +17,7 @@ export const NOTABLE_MARKUP = envNumber("NOTABLE_MARKUP", 25) || 25;
 const MARKUP = envNumber("CREDIT_MARKUP", 40) || 40; // 成本之上的加价倍数
 
 /** 读一个数字配置；没设或写错了用默认值。0 是有效的值 */
-function envNumber(name: string, fallback: number): number {
+export function envNumber(name: string, fallback: number): number {
   const v = process.env[name];
   if (v === undefined || v.trim() === "") return fallback;
   const n = Number(v);

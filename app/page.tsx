@@ -12,8 +12,8 @@ import type { Me } from "@/lib/account";
 import { citationReport, emptyProfile, endeavorReport, normalizeProfile, notableReport, profileToText, socReport } from "@/lib/profile";
 import type { Profile as ProfileData } from "@/lib/profile";
 import type { Place } from "@/lib/actions";
-import { dropFile, kvDel, kvGet, kvPut, setRemoteFiles } from "@/lib/files";
-import { clearMeta, fetchAll, fileIds, hashOf, isEmpty, loadMeta, mergeKey, pushOne, saveMeta, saveStash, SYNC_KEYS, takeStash, uploadMissingFiles } from "@/lib/sync";
+import { dropFile, forgetLocalFiles, kvDel, kvGet, kvPut, setRemoteFiles } from "@/lib/files";
+import { clearMeta, fetchAll, fileIds, filesSafeOnServer, hashOf, isEmpty, loadMeta, mergeKey, pushOne, saveMeta, saveStash, SYNC_KEYS, takeStash, uploadMissingFiles } from "@/lib/sync";
 import type { SyncKey, SyncMeta } from "@/lib/sync";
 import { normalizeCases, normalizeConversations, normalizeDocs } from "@/lib/types";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
@@ -511,6 +511,9 @@ export default function Home() {
       }
     }
     const clean = Boolean(meta) && metaRef.current === meta && !unsynced();
+    // 上传的文件：云端确实有的，退出后把这个浏览器里的那份也清掉（要趁还登录着的时候核对）
+    const cur = currentRef.current;
+    const safeFiles = clean ? await filesSafeOnServer(fileIds(cur.cases, cur.conversations, cur.docs)) : [];
     const res = await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
     if (!res?.ok) {
       setToast("退出失败，请检查网络后再试。");
@@ -523,6 +526,7 @@ export default function Home() {
       setSyncReady(false);
       clearMeta();
       if (meta) SYNC_KEYS.forEach((k) => void kvDel(`base:${meta.user}:${k}`));
+      void forgetLocalFiles(safeFiles);
       setConvs([]);
       setCases([]);
       setDocs([]);

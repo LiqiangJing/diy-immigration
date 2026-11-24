@@ -97,8 +97,17 @@ export default function Chat({
   const abort = useRef<AbortController | null>(null);
   const messages = conv?.messages ?? [];
   const allAttachments = (list: ChatMessage[]) => list.flatMap((m) => m.attachments ?? []);
-  const world = (list: ChatMessage[] = messages): World | null =>
-    ops ? { profile: ops.profile, cases: ops.cases, linkedCaseId: ops.linkedCaseId, attachments: allAttachments(list) } : null;
+  /** msg：正在看的是哪一条回复的卡片。它里面还没应用的「新建案件」要记下来，存文件的卡片得等它 */
+  const world = (list: ChatMessage[] = messages, msg?: ChatMessage): World | null =>
+    ops
+      ? {
+          profile: ops.profile,
+          cases: ops.cases,
+          linkedCaseId: ops.linkedCaseId,
+          attachments: allAttachments(list),
+          creating: (msg?.actions ?? []).flatMap((x) => (x.status === "pending" && x.action.type === "case" ? [x.action.name] : [])),
+        }
+      : null;
 
   /** 用户点了「应用」：依次执行，前一个的结果（比如新建的案件）后一个能用上 */
   const applying = useRef(false);
@@ -106,7 +115,7 @@ export default function Chat({
     if (!ops || !conv || applying.current) return; // 正在应用时不重复执行（连点两下）
     applying.current = true;
     try {
-      const w = world()!;
+      const w = world(messages, messages.find((m) => m.id === msgId))!;
       let profileChanged = false;
       let casesChanged = false;
       const done: Record<string, Pick<ActionItem, "status" | "note" | "place">> = {};
@@ -552,7 +561,7 @@ export default function Chat({
               {m.actions && m.actions.length > 0 && (
                 <div className="actions">
                   {m.actions.map((item) => {
-                    const w = world();
+                    const w = world(messages, m);
                     const d = w ? describe(item.action, w) : { title: "操作", rows: [], problem: undefined };
                     const pending = item.status === "pending";
                     return (

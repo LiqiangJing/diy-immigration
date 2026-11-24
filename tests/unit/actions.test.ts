@@ -1,4 +1,5 @@
-import { readActions, stripActions } from "@/lib/actions";
+import { apply, describe, readActions, stripActions } from "@/lib/actions";
+import { emptyProfile } from "@/lib/profile";
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail?: unknown) => { cond ? pass++ : fail++; console.log((cond ? "PASS " : "FAIL ") + name + (cond ? "" : "  -- " + JSON.stringify(detail)?.slice(0, 500))); };
 
@@ -28,4 +29,17 @@ const r7 = readActions(`<action>{"type":"endeavor","set":{"plan":"${long}"}}</ac
 ok("actions: over-long text is cut", (r7.actions[0] as any).set.plan.length === 8000);
 const many = Array.from({ length: 12 }, (_, i) => `<action>{"type":"case","name":"C${i}","caseType":"NIW"}</action>`).join("");
 ok("actions: at most eight per reply", readActions(many).actions.length === 8);
+
+// 存文件的卡片指名了一个还没建的案件，而同一条回复里有一张「新建案件」正要建它：
+// 不能因为那个案件还不存在，就把文件存进手头现有的另一个案件里
+const att = { id: "f1", name: "media.md", type: "text/plain", size: 10 };
+const oldCase = { id: "c1", name: "NIW - Jane Doe", type: "NIW" as const, createdAt: 1, done: [], files: [] };
+const save = readActions(`<action>{"type":"saveFile","file":"media.md","case":"Battery NIW","title":"Media Coverage"}</action>`).actions[0];
+const waiting = { profile: emptyProfile(), cases: [oldCase], attachments: [att], creating: ["Battery NIW"] };
+ok("actions: a file card waits for the case its reply is about to create", /先应用/.test(describe(save, waiting).problem ?? "") && Boolean(apply(save, waiting).error), describe(save, waiting));
+const made = apply({ type: "case", name: "Battery NIW", caseType: "NIW" } as any, waiting);
+const after = { ...waiting, cases: made.cases! };
+const stored = apply(save, after);
+ok("actions: once that case exists the file goes into it, not the older case", !stored.error && (stored.cases!.find((c) => c.name === "Battery NIW")!.files ?? []).length === 1 && (stored.cases!.find((c) => c.id === "c1")!.files ?? []).length === 0, stored);
+ok("actions: with no new case pending, the only existing case is still used", describe(save, { ...waiting, creating: [] }).problem === undefined && describe(save, { ...waiting, creating: [] }).rows.some((r) => r.value === "NIW - Jane Doe"));
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

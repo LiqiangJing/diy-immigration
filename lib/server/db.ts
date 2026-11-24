@@ -15,6 +15,10 @@ export function db(): Database.Database {
   const d = new Database(join(dir, "app.db"));
   d.pragma("journal_mode = WAL");
   d.pragma("foreign_keys = ON");
+  const columns = (table: string) => (d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  // 验证码表换了结构（原来一个邮箱一行）。里面只有十分钟内有效的验证码，直接重建
+  const oldCodes = columns("login_codes");
+  if (oldCodes.length && !oldCodes.includes("nonce_hash")) d.exec("DROP TABLE login_codes");
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id         TEXT PRIMARY KEY,
@@ -22,12 +26,25 @@ export function db(): Database.Database {
       credits    INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     );
+    -- 还没用掉的登录验证码。每个验证码绑在申请它的那个浏览器上（nonce 放在那个浏览器的 cookie 里），
+    -- 所以同一个邮箱可以同时有几行：别人替你的邮箱要验证码，不会顶掉你自己刚要的那个，也没法替你把它试错试废
     CREATE TABLE IF NOT EXISTS login_codes (
-      email      TEXT PRIMARY KEY,
+      nonce_hash TEXT PRIMARY KEY,
+      email      TEXT NOT NULL,
+      ip         TEXT NOT NULL,
       code_hash  TEXT NOT NULL,
       expires_at INTEGER NOT NULL,
       sent_at    INTEGER NOT NULL,
       attempts   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS login_codes_email ON login_codes(email);
+    -- 成功登录过某个账号的浏览器（cookie 里放一个随机串，这里存它的哈希）。这样的浏览器要验证码时单独计数，
+    -- 别人把这个邮箱的次数用光了也不影响它
+    CREATE TABLE IF NOT EXISTS known_devices (
+      device_hash TEXT NOT NULL,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      at          INTEGER NOT NULL,
+      PRIMARY KEY (device_hash, user_id)
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
@@ -75,7 +92,8 @@ export function db(): Database.Database {
       id    INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL,
       ip    TEXT NOT NULL,
-      at    INTEGER NOT NULL
+      at    INTEGER NOT NULL,
+      lane  TEXT NOT NULL DEFAULT 'anon'
     );
     CREATE INDEX IF NOT EXISTS code_requests_at ON code_requests(at);
     -- 支付宝订单
@@ -90,8 +108,8 @@ export function db(): Database.Database {
     );
   `);
   // 密码登录是后加的：老数据库里补上这几列
-  const cols = (d.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
-  if (!cols.includes("password_hash")) {
+  if (!columns("code_requests").includes("lane")) d.exec("ALTER TABLE code_requests ADD COLUMN lane TEXT NOT NULL DEFAULT 'anon'");
+  if (!columns("users").includes("password_hash")) {
     d.exec(`
       ALTER TABLE users ADD COLUMN password_hash TEXT;
       ALTER TABLE users ADD COLUMN pw_fails INTEGER NOT NULL DEFAULT 0;

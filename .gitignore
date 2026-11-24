@@ -1,5 +1,8 @@
 node_modules
 .next
+# 服务器上轮流使用的两个构建目录，以及记录当前用哪一个的文件
+.next-*
+.dist.env
 .env*.local
 next-env.d.ts
 image.png

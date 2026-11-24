@@ -105,6 +105,7 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
                 换一个邮箱
               </button>
             </p>
+            <p>请就在这个页面输入（验证码只在申请它的这个浏览器里有效）。</p>
             {!devCode && <p>一两分钟内没收到的话，请看一下垃圾邮件箱，或在邮箱里搜索「DIY Immigration」。</p>}
             {devCode && (
               <div className="dev-code">

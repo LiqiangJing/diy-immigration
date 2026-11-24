@@ -9,6 +9,8 @@ WorkingDirectory=/srv/diy-immigration
 Environment=NODE_ENV=production
 # 支付宝要求请求里的时间戳是北京时间
 Environment=TZ=Asia/Shanghai
+# 当前用哪个构建目录（deploy.sh 每次发布后改写，见 next.config.mjs）。文件不存在时用默认的 .next
+EnvironmentFile=-/srv/diy-immigration/.dist.env
 ExecStart=/usr/bin/npx next start -H 127.0.0.1 -p 3001
 Restart=always
 RestartSec=3

@@ -2,7 +2,11 @@
 
 diyimmigration.space {
 	encode gzip
-	reverse_proxy 127.0.0.1:3001
+	# 应用重启的那几秒（发布新版本时）先等一等再转发，而不是直接给用户报错
+	reverse_proxy 127.0.0.1:3001 {
+		lb_try_duration 20s
+		lb_try_interval 250ms
+	}
 }
 
 # www 跳到主域名
@@ -10,8 +14,7 @@ www.diyimmigration.space {
 	redir https://diyimmigration.space{uri} permanent
 }
 
-# 直接用 IP 访问（没有 HTTPS）
+# 直接用 IP 访问：不加密，一律跳到域名（https）
 :80 {
-	encode gzip
-	reverse_proxy 127.0.0.1:3001
+	redir https://diyimmigration.space{uri} permanent
 }

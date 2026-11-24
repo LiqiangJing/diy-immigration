@@ -3,7 +3,9 @@
 set -e
 SRC=/var/lib/diy-immigration
 DST=/var/backups/diy-immigration
+umask 077 # 备份里是用户的数据，只让 root 读
 mkdir -p "$DST"
+chmod 700 "$DST"
 [ -f "$SRC/app.db" ] || exit 0
 sqlite3 "$SRC/app.db" ".backup '$DST/app-$(date +%F).db'"
 find "$DST" -maxdepth 1 -name 'app-*.db' -mtime +14 -delete

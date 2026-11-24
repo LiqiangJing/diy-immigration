@@ -39,21 +39,67 @@ for bad in ["a@b", "@b.com", "a b@c.com", "a@@b.com", "a@b.c", "plain", ""]:
     r = requests.post(f"{BASE}/api/auth/request", json={"email": bad}, headers={"x-forwarded-for": rip()})
     check(f"email: invalid address rejected ({bad!r})", r.status_code == 400, r.text)
 
-# ---------- 验证码：同一个邮箱一小时最多 5 次 ----------
-e = mail(); ip = rip(); codes = []
-for i in range(7):
-    db("update login_codes set sent_at=0 where email=?", (e,))
-    r = requests.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": rip()})
-    codes.append(r.status_code)
-check("code: an address gets at most 5 codes an hour", codes == [200] * 5 + [429] * 2, codes)
-check("code: the refusal explains itself", "次数太多" in r.json().get("error", ""), r.text)
-# 同一个 IP 一小时最多 20 次
+# ---------- 验证码的次数上限 ----------
+def ask(e, ip=None, sess=None):
+    db("update login_codes set sent_at=0 where email=?", (e,))  # 跳过「一分钟内不重发」
+    return (sess or requests).post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": ip or rip()})
+
+# 同一个邮箱 + 同一个 IP：一小时 4 次；这时邮箱的主人在别的网络上仍然要得到
+e = mail(); bad_ip = rip()
+codes = [ask(e, bad_ip).status_code for _ in range(6)]
+check("code: one machine gets at most 4 codes an hour for an address", codes == [200] * 4 + [429] * 2, codes)
+r = ask(e, bad_ip)
+check("code: the refusal explains itself", "次数太多" in r.json().get("error", "") and "密码" in r.json().get("error", ""), r.text)
+check("code: the owner on another network still gets one", ask(e).status_code == 200)
+# 同一个邮箱所有 IP 合计：一小时 8 次
+e = mail(); codes = [ask(e).status_code for _ in range(10)]
+check("code: an address gets at most 8 codes an hour in total", codes == [200] * 8 + [429] * 2, codes)
+
+# 登录过这个账号的浏览器单独计数：别人把这个邮箱的名额用光了，它照样要得到
+s, email = login(ip=rip())
+check("code: a browser that logged in is remembered", "diy_device" in s.cookies, list(s.cookies.keys()))
+s.post(f"{BASE}/api/auth/logout")
+db("delete from code_requests where email=?", (email,))
+codes = [ask(email).status_code for _ in range(9)]
+check("code: strangers can use up an address's allowance", codes == [200] * 8 + [429], codes)
+r = ask(email, sess=s)
+check("code: the owner's usual browser still gets a code", r.status_code == 200 and r.json().get("devCode"), r.text)
+r2 = s.post(f"{BASE}/api/auth/verify", json={"email": email, "code": r.json()["devCode"]})
+check("code: and can log in with it", r2.status_code == 200 and s.get(f"{BASE}/api/me").json()["user"]["email"] == email, r2.text)
+codes = [ask(email, sess=s).status_code for _ in range(6)]
+check("code: the usual browser has its own cap (5 an hour)", codes == [200] * 4 + [429] * 2, codes)
+# 那个记号只对登录过的账号有用：拿它替别的邮箱要验证码，还是按陌生浏览器算
+e = mail(); [ask(e) for _ in range(8)]
+check("code: being known for one account gives nothing for another address", ask(e, sess=s).status_code == 429)
+stranger = requests.Session(); stranger.cookies.set("diy_device", "b" * 64)
+check("code: a made-up marker is treated as a stranger", ask(email, sess=stranger).status_code == 429)
+
+# 同一个 IP 一小时最多 30 次
 ip = rip(); codes = [requests.post(f"{BASE}/api/auth/request", json={"email": mail()}, headers={"x-forwarded-for": ip}).status_code for _ in range(32)]
 check("code: an IP gets at most 30 codes an hour", codes == [200] * 30 + [429] * 2, codes)
-# 一分钟内重发：告诉页面刚才那个还能用
-e = mail(); requests.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": rip()})
-r = requests.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": rip()})
+# 全站一天的总量（默认 400）。到了之后陌生浏览器要不到，登录过的浏览器不受影响
+now = int(time.time() * 1000)
+con_rows = [(f"flood{i}@example.com", f"203.0.{i % 250}.{i // 250 + 1}", now - 2 * 3600_000) for i in range(400)]
+import sqlite3 as _sq
+_c = _sq.connect(DB, timeout=10); _c.executemany("insert into code_requests (email, ip, at, lane) values (?, ?, ?, 'anon')", con_rows); _c.commit(); _c.close()
+r = ask(mail())
+check("code: over the site-wide daily total, strangers are asked to wait", r.status_code == 429 and "人太多" in r.json().get("error", ""), r.text)
+s_k, email_k = None, None
+db("delete from code_requests where email like 'flood%@example.com'")
+s_k, email_k = login(ip=rip()); s_k.post(f"{BASE}/api/auth/logout")
+_c = _sq.connect(DB, timeout=10); _c.executemany("insert into code_requests (email, ip, at, lane) values (?, ?, ?, 'anon')", con_rows); _c.commit(); _c.close()
+check("code: a known browser still gets a code during a flood", ask(email_k, sess=s_k).status_code == 200)
+db("delete from code_requests where email like 'flood%@example.com'")
+
+# 一分钟内重发：告诉页面刚才那个还能用（只对申请它的那个浏览器这么说）
+e = mail(); ip = rip(); sb = requests.Session()
+sb.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": ip})
+r = sb.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": ip})
 check("code: resend within a minute says the earlier code is still valid", r.status_code == 429 and r.json().get("sent") is True, r.text)
+r = requests.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": ip})
+check("code: another browser on the same network is told to wait, not sent to the code step", r.status_code == 429 and not r.json().get("sent"), r.text)
+r = sb.post(f"{BASE}/api/auth/request", json={"email": e}, headers={"x-forwarded-for": rip()})
+check("code: the same browser on a new network is also held to one a minute", r.status_code == 429 and r.json().get("sent") is True, r.text)
 
 # ---------- 别的网站发起的请求 ----------
 s, email = login(ip=rip())

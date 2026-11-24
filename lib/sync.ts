@@ -260,6 +260,32 @@ export function fileIds(...values: unknown[]): string[] {
   return [...ids];
 }
 
+/**
+ * 这些文件里哪些已经确定在服务器上了（缺的先补传，最多花 budgetMs）。
+ * 退出登录时用：只有云端确实有的，才把这个浏览器里的那份清掉。
+ */
+export async function filesSafeOnServer(ids: string[], budgetMs = 15_000): Promise<string[]> {
+  const deadline = Date.now() + budgetMs;
+  try {
+    const res = await fetch("/api/files", { cache: "no-store" });
+    if (!res.ok) return [];
+    const onServer = new Set<string>((await res.json()).ids ?? []);
+    const safe: string[] = [];
+    for (const id of new Set(ids)) {
+      if (onServer.has(id)) {
+        safe.push(id);
+        continue;
+      }
+      if (Date.now() > deadline) continue;
+      const data = await getLocalFile(id);
+      if (data && (await uploadFile(id, data))) safe.push(id);
+    }
+    return safe;
+  } catch {
+    return [];
+  }
+}
+
 /** 把当前浏览器里有、服务器上还没有的文件补传上去 */
 export async function uploadMissingFiles(ids: string[]) {
   let onServer: Set<string>;

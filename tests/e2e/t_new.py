@@ -21,7 +21,7 @@ def login_as(page, email):
     page.goto(BASE + "/")
     page.locator(".account-box button", has_text="登录 / 注册").first.click()
     page.locator(".modal input[type=email]").fill(email)
-    db("update login_codes set sent_at=0 where email=?", (email,))
+    db("update login_codes set sent_at=0 where email=?", (email,)); db("delete from code_requests where email=?", (email,))  # 测试里同一个账号反复登录，别撞上次数上限
     page.get_by_role("button", name="发送验证码").click()
     page.locator(".modal input[inputmode=numeric]").fill(page.locator(".dev-code strong").inner_text())
     page.locator(".modal button[type=submit]").click()

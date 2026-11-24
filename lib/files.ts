@@ -142,6 +142,22 @@ export async function dropFile(id: string) {
   if (remote) fetch(`/api/files/${id}`, { method: "DELETE" }).catch(() => {});
 }
 
+/** 只清掉这个浏览器里缓存的文件内容，服务器上的不动。退出登录时用，调用前要确认这些文件云端都有 */
+export async function forgetLocalFiles(ids: string[]) {
+  for (const id of ids) mem.delete(id);
+  if (!ids.length) return;
+  try {
+    const d = await db();
+    await new Promise<void>((resolve, reject) => {
+      const tx = d.transaction("files", "readwrite");
+      const store = tx.objectStore("files");
+      for (const id of ids) store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
+  } catch {}
+}
+
 function mimeOf(f: File): string | null {
   if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) return "application/pdf";
   if (["image/png", "image/jpeg", "image/webp", "image/gif"].includes(f.type)) return f.type;

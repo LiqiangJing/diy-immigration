@@ -1,4 +1,4 @@
-import { crossSite, forbidden, loginWithPassword, normalizeEmail, sessionCookie } from "@/lib/server/auth";
+import { crossSite, deviceCookie, forbidden, loginWithPassword, normalizeEmail, rememberDevice, sessionCookie } from "@/lib/server/auth";
 import { readJson, TooLarge, tooLarge } from "@/lib/server/body";
 import { clientIp, rate } from "@/lib/server/limits";
 
@@ -23,5 +23,8 @@ export async function POST(req: Request) {
   }
   const r = loginWithPassword(email, password);
   if ("error" in r) return Response.json({ error: r.error }, { status: 400 });
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": sessionCookie(req, r.token) } });
+  const headers = new Headers();
+  headers.append("Set-Cookie", sessionCookie(req, r.token));
+  headers.append("Set-Cookie", deviceCookie(req, rememberDevice(req, r.userId)));
+  return Response.json({ ok: true }, { headers });
 }

@@ -41,7 +41,7 @@ with sync_playwright() as p:
     page.locator(".account-box button", has_text="登录 / 注册").click()
     m = page.locator(".modal")
     m.locator("input[type=email]").fill(email)
-    db("update login_codes set sent_at=0 where email=?", (email,))
+    db("update login_codes set sent_at=0 where email=?", (email,)); db("delete from code_requests where email=?", (email,))  # 测试里同一个账号反复登录，别撞上次数上限
     m.get_by_role("button", name="发送验证码").click()
     code = m.locator(".dev-code strong").inner_text()
     m.locator("input[inputmode=numeric]").fill(code)

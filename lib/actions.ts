@@ -249,20 +249,32 @@ export const parseActions = (raw: string): ChatAction[] => readActions(raw).acti
 /* ---------- 展示 ---------- */
 
 export type Row = { label: string; value: string; old?: string };
-export type World = { profile: Profile; cases: ImmigrationCase[]; linkedCaseId?: string | null; attachments: Attachment[] };
+export type World = {
+  profile: Profile;
+  cases: ImmigrationCase[];
+  linkedCaseId?: string | null;
+  attachments: Attachment[];
+  /** 同一条回复里还没应用的「新建案件」卡片要建的案件名 */
+  creating?: string[];
+};
 
 const degreeText = (d: DegreeIn) => [d.type, d.major, d.university, d.year].filter(Boolean).join("，");
 const projectOf = (soc: Soc, match: string) => {
   const m = match.trim().toLowerCase();
   return soc.projects.find((p) => p.title.trim().toLowerCase() === m) ?? soc.projects.find((p) => p.title.toLowerCase().includes(m) || (p.title.trim() && m.includes(p.title.trim().toLowerCase())));
 };
+/** 指名的案件还没建、而同一条回复里有一张「新建案件」正要建它 */
+const awaitingCase = (w: World, name: string) => {
+  const n = name.trim().toLowerCase();
+  return Boolean(n) && !w.cases.some((c) => c.name.toLowerCase() === n) && Boolean(w.creating?.some((x) => x.trim().toLowerCase() === n));
+};
 const targetCase = (w: World, name: string) => {
   const n = name.trim().toLowerCase();
-  return (
-    (n && (w.cases.find((c) => c.name.toLowerCase() === n) ?? w.cases.find((c) => c.name.toLowerCase().includes(n)))) ||
-    w.cases.find((c) => c.id === w.linkedCaseId) ||
-    (w.cases.length === 1 ? w.cases[0] : undefined)
-  );
+  const named = n ? (w.cases.find((c) => c.name.toLowerCase() === n) ?? w.cases.find((c) => c.name.toLowerCase().includes(n))) : undefined;
+  if (named) return named;
+  // 要等那个案件建好：不能因为它还不存在，就先存进手头现有的另一个案件里
+  if (awaitingCase(w, name)) return undefined;
+  return w.cases.find((c) => c.id === w.linkedCaseId) || (w.cases.length === 1 ? w.cases[0] : undefined);
 };
 const attachmentOf = (w: World, name: string) => {
   const n = name.trim().toLowerCase();
@@ -336,7 +348,13 @@ export function describe(a: ChatAction, w: World): { title: string; rows: Row[];
   return {
     title: "把文件存进案件（打包时作为 Exhibit）",
     rows,
-    problem: !f ? `这次对话里没有找到文件「${a.file}」，请重新上传` : !c ? (w.cases.length ? "不确定存到哪个案件，请告诉我案件名称" : "还没有案件，请先新建一个") : undefined,
+    problem: !f ? `这次对话里没有找到文件「${a.file}」，请重新上传` : !c
+        ? awaitingCase(w, a.case)
+          ? `案件「${a.case}」还没建好，请先应用上面的「新建案件」`
+          : w.cases.length
+            ? "不确定存到哪个案件，请告诉我案件名称"
+            : "还没有案件，请先新建一个"
+        : undefined,
   };
 }
 
