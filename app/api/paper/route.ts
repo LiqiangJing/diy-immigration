@@ -5,6 +5,7 @@
  * 只能拿到开放获取的版本；拿不到时返回 404，由用户自己下载后上传。不扣 credit。
  */
 
+import { readJson } from "@/lib/server/body";
 import { getUser } from "@/lib/server/auth";
 import { busy, hold, rate } from "@/lib/server/limits";
 import { fetchPaperPdf } from "@/lib/server/papers";
@@ -15,7 +16,7 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   const user = getUser(req);
   if (!user) return Response.json({ error: "请先登录。" }, { status: 401 });
-  const body = await req.json().catch(() => null);
+  const body = await readJson(req, 64 * 1024).catch(() => null);
   const title = typeof body?.title === "string" ? body.title.trim().slice(0, 500) : "";
   const url = typeof body?.url === "string" ? body.url.trim().slice(0, 500) : undefined;
   if (title.length < 8) return Response.json({ error: "论文标题太短。" }, { status: 400 });

@@ -39,6 +39,8 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
   const files = c.files ?? [];
   const written = docs.filter((d) => d.content.trim());
   const bySkill = (...ids: string[]) => written.filter((d) => d.skill && ids.includes(d.skill));
+  // 已经开始（和 AI 聊过）但文档里还没有内容的：回来时接着做，而不是每次都新开一份空的
+  const begun = (...ids: string[]) => docs.filter((d) => d.skill && ids.includes(d.skill) && !d.content.trim() && d.chat.length > 0);
   const byKind = (kind: string) => written.filter((d) => d.kind === kind);
   const fileLike = (re: RegExp) => files.filter((f) => re.test(f.name));
   const names = (list: { title?: string; name?: string }[]) =>
@@ -49,7 +51,10 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
 
   const start = (id: string): Action => {
     const w = workflowById(id)!;
-    return { label: `和 AI 一起做：${w.title}`, run: () => onWorkflow(w) };
+    const going = begun(id)[0];
+    return going
+      ? { label: `继续和 AI 做：${w.title}`, run: () => onOpenDoc(going.id) }
+      : { label: `和 AI 一起做：${w.title}`, run: () => onWorkflow(w) };
   };
   const openDocs = (list: DocFile[]): Action[] =>
     list.slice(0, 3).map((d) => ({ label: `打开「${d.title}」`, run: () => onOpenDoc(d.id) }));
@@ -59,7 +64,14 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
 
   const assess = bySkill("case-strength-assessor");
   const letters = [...new Set([...bySkill("expert-letter-drafter"), ...byKind("推荐信")])];
-  const letterFiles = fileLike(/recommend|reference|letter|推荐|\brl\b/i);
+  // 文件名看起来是推荐信的。一键下载的论文不算（题目里常有 Recommender、RL 这样的词），Cover Letter、Offer Letter 也不算
+  const letterFiles = files.filter(
+    (f) =>
+      !isPaperFile(f) &&
+      !/cover|offer|petition/i.test(f.name) &&
+      (/recommendation|reference letter|letter of (recommendation|support|reference)|support letter|推荐信/i.test(f.name) ||
+        f.name.replace(/\.[^.]+$/, "").split(/[^A-Za-z0-9]+/).some((w) => /^(rl|lor|rec)\d*$/i.test(w))),
+  );
   const pl = [...new Set([...bySkill("niw-petition-narrative", "eb1a-petition-narrative"), ...byKind("Petition Letter")])];
   const endeavor = byKind("Proposed Endeavor 陈述");
   const notable = byKind("重要引用");
@@ -261,7 +273,8 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
       id: "pack",
       title: "打包下载",
       desc: "把 Cover Letter、Petition Letter 和所有 Exhibit 按顺序合成一份带页眉、页码、目录和分隔页的 PDF，就是最终递交的版本。",
-      done: false,
+      done: Boolean(c.packedAt),
+      have: c.packedAt ? `上次生成于 ${new Date(c.packedAt).toLocaleString("zh-CN")}。材料有改动的话记得重新生成` : "",
       actions: [{ label: "去打包下载", run: () => goTab("pack") }],
     },
   ];
@@ -302,7 +315,7 @@ export default function Guide({ c, docs, profile: p, patchCase, onWorkflow, onCr
                 {s.body}
                 <div className="step-actions">
                   {s.actions.map((a, k) => (
-                    <button key={a.label} className={k === 0 && s === current ? "btn-accent" : "btn-ghost"} onClick={a.run}>
+                    <button key={k} className={k === 0 && s === current ? "btn-accent" : "btn-ghost"} onClick={a.run}>
                       {a.label}
                     </button>
                   ))}

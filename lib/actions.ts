@@ -86,8 +86,8 @@ export type ChatAction =
   | { type: "case"; name: string; caseType: CaseType }
   | { type: "saveFile"; file: string; case: string; title: string };
 
-/** 存在聊天消息上的操作及其状态 */
-export type ActionItem = { id: string; action: ChatAction; status: "pending" | "applied" | "skipped"; note?: string };
+/** 存在聊天消息上的操作及其状态。place 是应用时实际改到的那一页，之后点「去看」就去那里 */
+export type ActionItem = { id: string; action: ChatAction; status: "pending" | "applied" | "skipped"; note?: string; place?: Place };
 
 /* ---------- 解析 ---------- */
 
@@ -118,12 +118,14 @@ function pickText<K extends string>(raw: unknown, keys: Record<K, string>, max: 
 
 function degree(raw: Record<string, unknown>): DegreeIn | null {
   const t = str(raw.type, 60);
-  // 模型可能只写 PhD / 博士，对到下拉框里的选项上
+  // 模型可能只写 PhD / 博士，对到下拉框里的选项上。先认 JD、MD：它们的全称里也有 Doctor，不能当成 PhD
   const type =
     DEGREE_TYPES.find((d) => d === t) ??
-    DEGREE_TYPES.find((d) => /phd|博士|doctor/i.test(t) && d.includes("PhD")) ??
-    DEGREE_TYPES.find((d) => /master|硕士|m\.?s\b|m\.?a\b|meng|mba/i.test(t) && d.includes("Master")) ??
-    DEGREE_TYPES.find((d) => /bachelor|学士|本科|b\.?s\b|b\.?a\b|beng/i.test(t) && d.includes("Bachelor")) ??
+    (/juris|\bj\.?d\.?\b|法律博士|法学博士（jd）/i.test(t) ? "JD" : undefined) ??
+    (/doctor of medicine|\bm\.?d\.?\b|医学博士/i.test(t) ? "MD" : undefined) ??
+    DEGREE_TYPES.find((d) => /phd|ph\.d|博士|doctor/i.test(t) && d.includes("PhD")) ??
+    DEGREE_TYPES.find((d) => /master|硕士|\bm\.?(s|a|sc|eng|phil|ed)\.?\b|\bmba\b|\bllm\b/i.test(t) && d.includes("Master")) ??
+    DEGREE_TYPES.find((d) => /bachelor|学士|本科|\bb\.?(s|a|sc|eng)\.?\b|\bllb\b/i.test(t) && d.includes("Bachelor")) ??
     DEGREE_TYPES.find((d) => d === t.toUpperCase()) ??
     "其他";
   const related = str(raw.related, 10);
@@ -191,19 +193,58 @@ function one(raw: unknown): ChatAction | null {
   return null;
 }
 
-/** 从完整的回复里取出所有格式正确的操作；看不懂的直接丢掉 */
-export function parseActions(raw: string): ChatAction[] {
-  const out: ChatAction[] = [];
-  for (const m of raw.matchAll(BLOCK)) {
-    try {
-      const a = one(JSON.parse(m[1].trim().replace(/^```(?:json)?\s*|\s*```$/g, "")));
-      if (a) out.push(a);
-    } catch {
-      // JSON 不完整或写错了，跳过
+/**
+ * 模型写的 JSON 里，字符串中间常常直接换行（多行的计划、成果列表），严格的 JSON 不允许。
+ * 把字符串里面的换行、制表符换成转义写法再解析。
+ */
+function repairJson(s: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (ch === "\\") {
+        out += ch + (s[i + 1] ?? "");
+        i++;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      out += ch === "\n" ? "\\n" : ch === "\r" ? "" : ch === "\t" ? "\\t" : ch;
+    } else {
+      if (ch === '"') inString = true;
+      out += ch;
     }
   }
-  return out.slice(0, 8);
+  return out;
 }
+
+/** 从完整的回复里取出所有格式正确的操作。failed 是写了标签但内容看不懂的个数，页面会告诉用户 */
+export function readActions(raw: string): { actions: ChatAction[]; failed: number } {
+  const actions: ChatAction[] = [];
+  let failed = 0;
+  for (const m of raw.matchAll(BLOCK)) {
+    const text = m[1].trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        parsed = JSON.parse(repairJson(text));
+      } catch {
+        failed++;
+        continue;
+      }
+    }
+    const a = one(parsed);
+    if (a) actions.push(a);
+    else failed++;
+  }
+  // 标签开了头却没有结束（回复被截断）也算一个没读懂的
+  if (raw.replace(BLOCK, "").includes("<action>")) failed++;
+  return { actions: actions.slice(0, 8), failed };
+}
+
+export const parseActions = (raw: string): ChatAction[] => readActions(raw).actions;
 
 /* ---------- 展示 ---------- */
 

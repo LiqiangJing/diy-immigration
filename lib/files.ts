@@ -33,10 +33,36 @@ function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
   );
 }
 
+/**
+ * 小型的键值存储，和文件内容放在同一个 IndexedDB 里（键带前缀，不会和文件 id 撞）。
+ * 用来放比较大、又不适合放 localStorage 的东西，比如每份数据上次和服务器对齐时的内容。
+ */
+export async function kvPut(key: string, value: string) {
+  try {
+    await run("readwrite", (s) => s.put(value, `kv:${key}`));
+  } catch {}
+}
+export async function kvGet(key: string): Promise<string | undefined> {
+  try {
+    const v = await run<string | undefined>("readonly", (s) => s.get(`kv:${key}`));
+    return typeof v === "string" ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+export async function kvDel(key: string) {
+  try {
+    await run("readwrite", (s) => s.delete(`kv:${key}`));
+  } catch {}
+}
+
 // 登录后文件同时存一份到服务器（见 lib/sync.ts），换设备或清缓存后能取回
 let remote = false;
-export const setRemoteFiles = (on: boolean) => {
+let onFull: (() => void) | null = null;
+/** onFull：云端空间满了、文件只存在本机时通知页面 */
+export const setRemoteFiles = (on: boolean, full?: () => void) => {
   remote = on;
+  onFull = on ? (full ?? null) : null;
 };
 
 function toBytes(b64: string): Uint8Array<ArrayBuffer> {
@@ -56,6 +82,7 @@ function fromBytes(bytes: Uint8Array): string {
 export async function uploadFile(id: string, data: string): Promise<boolean> {
   try {
     const res = await fetch(`/api/files/${id}`, { method: "PUT", body: new Blob([toBytes(data)]) });
+    if (res.status === 507) onFull?.();
     return res.ok;
   } catch {
     return false;
@@ -170,7 +197,8 @@ export async function saveUploads(files: FileList | File[]) {
 }
 
 /**
- * 用新上传的文件替换一个已有的文件。沿用原来的 id，所以它在打包顺序里的位置、标题等设置都不变。
+ * 用新上传的文件替换一个已有的文件。新文件用新的 id（别的设备上缓存着旧内容，沿用旧 id 的话它们不会去取新的）；
+ * 调用方负责把打包设置里记的旧 id 换成新的，并释放旧文件。
  * keepName 为 true 时保留原来的文件名（去掉预印本标记），否则用新文件的名字。
  */
 export async function replaceUpload(old: Attachment, f: File, keepName: boolean): Promise<{ att?: Attachment; problem?: string }> {
@@ -179,9 +207,10 @@ export async function replaceUpload(old: Attachment, f: File, keepName: boolean)
   if (f.size > MAX_FILE) return { problem: `「${f.name}」超过 20 MB` };
   if (f.size === 0) return { problem: `「${f.name}」是空文件` };
   try {
-    await putFile(old.id, await toBase64(f));
+    const id = uid();
+    await putFile(id, await toBase64(f));
     const name = keepName ? old.name.replace(" [arXiv preprint]", "") : f.name;
-    return { att: { id: old.id, name, type, size: f.size } };
+    return { att: { ...old, id, name, type, size: f.size } };
   } catch {
     return { problem: `「${f.name}」读取失败` };
   }

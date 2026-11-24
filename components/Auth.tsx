@@ -20,7 +20,7 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error ?? "请求失败，请稍后再试。");
+    if (!res.ok) throw Object.assign(new Error(data?.error ?? "请求失败，请稍后再试。"), { sent: Boolean(data?.sent) });
     return data;
   }
 
@@ -42,6 +42,8 @@ export default function Auth({ onClose, onDone }: { onClose: () => void; onDone:
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "请求失败");
+      // 一分钟内刚发过验证码（比如关掉弹窗又打开）：之前那个还能用，直接让用户去输
+      if (mode === "code" && step === "email" && (err as { sent?: boolean }).sent) setStep("code");
     } finally {
       setBusy(false);
     }

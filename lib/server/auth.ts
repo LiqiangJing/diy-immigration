@@ -43,7 +43,7 @@ const devCodeAllowed = () => process.env.NODE_ENV !== "production" || process.en
 
 // 发验证码的次数上限。一个验证码最多试 5 次，所以这也限制了别人能猜多少次
 const HOUR = 3600_000;
-const LIMITS = { emailHour: 5, emailDay: 12, ipHour: 20, ipDay: 60, allHour: 300 };
+const LIMITS = { emailHour: 5, emailDay: 12, ipHour: 30, ipDay: 100, allHour: 300 }; // 学校、公司常常很多人共用一个出口 IP
 
 const sendCode = (email: string, code: string) =>
   sendMail({

@@ -9,11 +9,15 @@ import PaperFetch from "@/components/PaperFetch";
 import { endeavorFilled, profileToText } from "@/lib/profile";
 import type { Profile } from "@/lib/profile";
 import type { ProfileTab } from "@/components/Profile";
-import { CHECKLISTS, totalItems } from "@/lib/checklists";
+import { CHECKLISTS } from "@/lib/checklists";
+import type { ChecklistGroup } from "@/lib/checklists";
 import { claimsLine } from "@/lib/claims";
 import { workflowsFor } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
-import { ACCEPT, dropFile, fmtSize, replaceUpload, saveUploads } from "@/lib/files";
+import { ACCEPT, fmtSize, replaceUpload, saveUploads } from "@/lib/files";
+import { useAccount } from "@/lib/account";
+import { fileIds } from "@/lib/sync";
+import { EB1A_CRITERIA } from "@/lib/claims";
 import { isPaperFile } from "@/components/PaperFetch";
 import { uid } from "@/lib/types";
 import type { CaseType, DocFile, ImmigrationCase } from "@/lib/types";
@@ -34,6 +38,26 @@ type Props = {
 };
 
 type Tab = "guide" | "docs" | "files" | "checklist" | "pack";
+
+// EB-1A 清单里十项标准各有一条，和申请向导里「选择申报条件」的十个选项一一对应
+const CRITERION_ITEM: Record<string, string> = {
+  awards: "eb1-awards", membership: "eb1-membership", media: "eb1-media", judging: "eb1-judging", contributions: "eb1-contrib",
+  articles: "eb1-articles", exhibitions: "eb1-exhibit", leading: "eb1-leading", salary: "eb1-salary", commercial: "eb1-commercial",
+};
+
+/**
+ * 这个案件的材料清单。EB-1A 只要满足十项标准里的三项，所以选了申报条件之后只列出选中的那几项；
+ * 不然没打算主张的标准永远勾不上，进度到不了 100%。
+ */
+export function checklistFor(c: ImmigrationCase): ChecklistGroup[] {
+  const groups = CHECKLISTS[c.type];
+  if (c.type !== "EB-1A") return groups;
+  const picked = new Set((c.claims ?? []).filter((id) => EB1A_CRITERIA.some((k) => k.id === id)).map((id) => CRITERION_ITEM[id]));
+  if (!picked.size) return groups;
+  return groups.map((g, i) =>
+    i === 0 ? { ...g, title: "你选择主张的标准", note: "只列出你在「申请向导」里选的标准；要增减请到向导的「选择申报条件」里改。" + (g.note ? ` ${g.note}` : ""), items: g.items.filter((it) => picked.has(it.id)) } : g,
+  );
+}
 
 export const caseLine = (c: ImmigrationCase) =>
   [`当前案件：${c.name}（${c.type}）`, claimsLine(c)].filter(Boolean).join("\n");
@@ -68,6 +92,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const account = useAccount();
 
   const open = cases.find((c) => c.id === openId) ?? null;
   const openDoc = draft ?? docs.find((d) => d.id === openDocId) ?? null;
@@ -148,6 +173,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
           setOpenDocId(null);
         }}
         onDelete={() => {
+          account.releaseFiles(fileIds(openDoc.chat));
           setDocs((list) => list.filter((d) => d.id !== openDoc.id));
           setDraft(null);
           setOpenDocId(null);
@@ -164,8 +190,11 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
 
   // ---------- 单个案件 ----------
   if (open) {
-    const total = totalItems(open.type);
-    const pct = Math.round((open.done.length / total) * 100);
+    const groups = checklistFor(open);
+    const ids = new Set(groups.flatMap((g) => g.items.map((it) => it.id)));
+    const total = ids.size;
+    const doneCount = open.done.filter((id) => ids.has(id)).length;
+    const pct = Math.round((doneCount / total) * 100);
     const caseDocs = docs.filter((d) => d.caseId === open.id);
     const files = open.files ?? [];
     return (
@@ -178,14 +207,15 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
             <h2>{open.name}</h2>
             <p>
               <span className="tag">{open.type}</span>
-              {caseDocs.length} 份文档 · {files.length} 个文件 · 清单完成 {open.done.length} / {total}
+              {caseDocs.length} 份文档 · {files.length} 个文件 · 清单完成 {doneCount} / {total}
             </p>
           </div>
           <button
             className="btn-ghost danger"
             onClick={() => {
               if (!confirm(`删除案件「${open.name}」以及里面的文档和文件？此操作无法撤销。`)) return;
-              files.forEach((f) => dropFile(f.id));
+              // 案件的文件和里面各份文档对话里带的附件一起清掉（别的会话还在引用的会留着）
+              account.releaseFiles([...files.map((f) => f.id), ...fileIds(caseDocs.map((d) => d.chat))]);
               setDocs((list) => list.filter((d) => d.caseId !== open.id));
               setCases((list) => list.filter((c) => c.id !== open.id));
               setOpenId(null);
@@ -300,7 +330,24 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
                           // 一键下载的论文保留原来的名字（去掉预印本标记），其他文件用新文件的名字
                           const { att, problem } = await replaceUpload(f, nf, isPaperFile(f));
                           setNotice(problem ?? "");
-                          if (att) patchCase(open.id, (c) => ({ ...c, files: (c.files ?? []).map((x) => (x.id === f.id ? att : x)) }));
+                          if (!att) return;
+                          // 新文件是新的 id：把打包设置里记着旧 id 的地方（顺序、标题、位置、是否放进包）换成新的，再释放旧文件
+                          const swap = (id: string) => (id === f.id ? att.id : id);
+                          const rekey = <T,>(o: Record<string, T> | undefined) =>
+                            Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [swap(k), v])) as Record<string, T>;
+                          patchCase(open.id, (c) => ({
+                            ...c,
+                            files: (c.files ?? []).map((x) => (x.id === f.id ? att : x)),
+                            pack: c.pack && {
+                              ...c.pack,
+                              order: c.pack.order.map(swap),
+                              skip: c.pack.skip.map(swap),
+                              keep: c.pack.keep?.map(swap),
+                              titles: rekey(c.pack.titles),
+                              roles: rekey(c.pack.roles),
+                            },
+                          }));
+                          account.releaseFiles([f.id]);
                         }}
                       />
                     </label>
@@ -308,8 +355,8 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
                       className="link-danger"
                       onClick={() => {
                         if (!confirm(`删除文件「${f.name}」？`)) return;
-                        dropFile(f.id);
                         patchCase(open.id, (c) => ({ ...c, files: (c.files ?? []).filter((x) => x.id !== f.id) }));
+                        account.releaseFiles([f.id]);
                       }}
                     >
                       删除
@@ -330,7 +377,7 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
             <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
               <div style={{ width: `${pct}%` }} />
             </div>
-            {CHECKLISTS[open.type].map((g) => (
+            {groups.map((g) => (
               <section key={g.title} className="group">
                 <h3>{g.title}</h3>
                 {g.note && <p className="group-note">{g.note}</p>}
@@ -421,7 +468,9 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
       ) : (
         <div className="case-list">
           {cases.map((c) => {
-            const total = totalItems(c.type);
+            const ids = new Set(checklistFor(c).flatMap((g) => g.items.map((it) => it.id)));
+            const total = ids.size;
+            const done = c.done.filter((id) => ids.has(id)).length;
             const n = docs.filter((d) => d.caseId === c.id).length;
             return (
               <button
@@ -436,10 +485,10 @@ export default function Cases({ cases, setCases, docs, setDocs, profile, goProfi
                 <span className="tag">{c.type}</span>
                 <strong>{c.name}</strong>
                 <span className="case-meta">
-                  {n} 份文档 · {(c.files ?? []).length} 个文件 · 清单 {c.done.length} / {total}
+                  {n} 份文档 · {(c.files ?? []).length} 个文件 · 清单 {done} / {total}
                 </span>
                 <div className="progress">
-                  <div style={{ width: `${(c.done.length / total) * 100}%` }} />
+                  <div style={{ width: `${(done / total) * 100}%` }} />
                 </div>
               </button>
             );

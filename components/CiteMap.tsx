@@ -3,6 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useAccount } from "@/lib/account";
 import type { CiteMap as CiteMapData, Profile as ProfileData } from "@/lib/profile";
+import { begin, end, useRunning } from "@/lib/running";
+import { normTitle } from "@/lib/titles";
 import world from "@/lib/worldMap.json";
 
 type Props = {
@@ -13,7 +15,7 @@ type Props = {
 };
 
 const COST = 30;
-const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const key = normTitle;
 // 由浅到深五档，按引用数的对数分档，免得第一名把其他国家都压成最浅
 const SHADES = ["#d5e8df", "#a6cfbd", "#6fb096", "#3f8a6c", "#1f5f4a"];
 const EMPTY = "#eceae3";
@@ -21,8 +23,10 @@ const EMPTY = "#eceae3";
 /** 「我的档案」里的引用地图：引用你论文的人分布在世界上哪些国家和机构 */
 export default function CiteMap({ profile: p, setProfile, demoRun }: Props) {
   const account = useAccount();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const run0 = useRunning();
+  const [demoBusy, setDemoBusy] = useState(false);
+  const busy = demoBusy || Boolean(run0.running.citemap);
+  const error = run0.errors.citemap ?? "";
   const svgRef = useRef<SVGSVGElement>(null);
   const m: CiteMapData | undefined = p.citeMap;
 
@@ -59,14 +63,14 @@ export default function CiteMap({ profile: p, setProfile, demoRun }: Props) {
 
   async function run() {
     if (demoRun) {
-      setBusy(true);
+      setDemoBusy(true);
       await demoRun();
-      setBusy(false);
+      setDemoBusy(false);
       return;
     }
     if (!account.guard(COST)) return;
-    setBusy(true);
-    setError("");
+    if (!begin("citemap")) return;
+    let problem = "";
     try {
       const res = await fetch("/api/citemap", {
         method: "POST",
@@ -77,9 +81,9 @@ export default function CiteMap({ profile: p, setProfile, demoRun }: Props) {
       if (!res.ok || !data?.map) throw new Error(data?.error ?? "生成失败，请稍后再试。");
       setProfile((prev) => ({ ...prev, citeMap: data.map, updatedAt: Date.now() }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "生成失败");
+      problem = e instanceof Error ? e.message : "生成失败";
     } finally {
-      setBusy(false);
+      end("citemap", problem);
       account.refresh();
     }
   }
@@ -88,7 +92,11 @@ export default function CiteMap({ profile: p, setProfile, demoRun }: Props) {
   function download() {
     const svg = svgRef.current;
     if (!svg) return;
-    const xml = new XMLSerializer().serializeToString(svg);
+    // 导出用的副本写明宽高：有的浏览器画不出只有 viewBox、没有尺寸的 SVG，会得到一张空白图
+    const copy = svg.cloneNode(true) as SVGSVGElement;
+    copy.setAttribute("width", String(svg.viewBox.baseVal.width));
+    copy.setAttribute("height", String(svg.viewBox.baseVal.height));
+    const xml = new XMLSerializer().serializeToString(copy);
     const img = new Image();
     img.onload = () => {
       const scale = 2;

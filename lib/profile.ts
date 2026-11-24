@@ -106,8 +106,19 @@ export const emptySoc = (): Soc => ({
   media: "",
   other: "",
 });
+/** 贡献总结里有没有填任何内容 */
 export const socFilled = (s: Soc | undefined) =>
-  Boolean(s && (s.importance.trim() || s.projects.some((x) => x.title.trim() || x.summary.trim())));
+  Boolean(
+    s &&
+      ([s.subareas, s.importance, s.awards, s.openSource, s.media, s.other].some((x) => x.trim()) ||
+        s.projects.some((x) => x.title.trim() || x.summary.trim() || x.outputs.trim() || x.impact.trim()) ||
+        s.reviews.some((r) => r.venue.trim())),
+  );
+
+/** 一条审稿记录的次数。用户可能填「5+」「约 10」，取里面的数字 */
+export const reviewCount = (r: SocReview) => parseInt(r.count.replace(/[^\d]/g, ""), 10) || 0;
+/** 审稿总次数：只算写了期刊或会议名称的（页面、发给 AI 的文字和生成的文档都用这一个算法） */
+export const reviewTotal = (s: Soc) => s.reviews.filter((r) => r.venue.trim()).reduce((n, r) => n + reviewCount(r), 0);
 
 /**
  * 拟从事事业（Proposed Endeavor）：NIW 的核心，写的是到美国之后打算做什么。
@@ -188,11 +199,29 @@ export const emptyProfile = (): Profile => ({
 /** 读出存档时补齐字段，并把旧版（只有一个来源）的数据转成新的多来源格式 */
 export function normalizeProfile(raw: Record<string, any>): Profile {
   const p = { ...emptyProfile(), ...raw } as Profile & Record<string, any>;
-  if (!Array.isArray(p.records)) p.records = [];
-  if (!Array.isArray(p.analyses)) p.analyses = [];
+  const obj = (x: unknown): x is Record<string, any> => typeof x === "object" && x !== null;
+  // 存下来的数据万一缺了里层的字段（旧版本、手动改过），补齐，免得页面在渲染时出错
+  p.records = (Array.isArray(p.records) ? p.records : []).filter(obj).map((r) => ({
+    ...r,
+    source: String(r.source ?? ""),
+    papers: String(r.papers ?? ""),
+    citations: String(r.citations ?? ""),
+    hIndex: String(r.hIndex ?? ""),
+    publications: (Array.isArray(r.publications) ? r.publications : []).filter((w: unknown) => obj(w) && typeof w.title === "string"),
+  })) as ScholarRecord[];
+  p.analyses = (Array.isArray(p.analyses) ? p.analyses : [])
+    .filter((a) => obj(a) && typeof a.title === "string")
+    .map((a) => ({ ...a, items: (Array.isArray(a.items) ? a.items : []).filter((i: unknown) => obj(i) && typeof i.citingTitle === "string").map((i: any) => ({ ...i, contexts: Array.isArray(i.contexts) ? i.contexts : [] })) }));
+  p.degrees = (Array.isArray(p.degrees) ? p.degrees : []).filter(obj) as Degree[];
+  if (!obj(p.enrolled)) p.enrolled = null;
+  for (const k of ["firstName", "lastName", "chineseName", "field", "scholarUrl", "s2Url", "papers", "citations", "hIndex", "primarySource", "reviews", "currentPosition", "fieldFrom", "fieldTo", "nextPaper"] as const) {
+    if (typeof p[k] !== "string") (p as Record<string, unknown>)[k] = p[k] === null || p[k] === undefined ? "" : String(p[k]);
+  }
   p.soc = { ...emptySoc(), ...(raw.soc && typeof raw.soc === "object" ? raw.soc : {}) };
-  if (!Array.isArray(p.soc.projects)) p.soc.projects = [];
-  if (!Array.isArray(p.soc.reviews)) p.soc.reviews = [];
+  for (const k of ["subareas", "importance", "awards", "openSource", "media", "other"] as const) if (typeof p.soc[k] !== "string") p.soc[k] = "";
+  const blankProject = { title: "", start: "", end: "", outputs: "", funding: "", summary: "", impact: "" };
+  p.soc.projects = (Array.isArray(p.soc.projects) ? p.soc.projects : []).filter(obj).map((x) => ({ ...blankProject, ...x }));
+  p.soc.reviews = (Array.isArray(p.soc.reviews) ? p.soc.reviews : []).filter(obj).map((r) => ({ ...r, venue: String(r.venue ?? ""), count: String(r.count ?? ""), invited: r.invited ?? "" }));
   const e = raw.endeavor && typeof raw.endeavor === "object" ? raw.endeavor : {};
   p.endeavor = emptyEndeavor();
   for (const k of ENDEAVOR_KEYS) if (typeof e[k] === "string") p.endeavor[k] = e[k];
@@ -306,8 +335,10 @@ export function profileToText(p: Profile, fullEndeavor = false): string {
     soc.projects
       .filter((x) => x.title.trim())
       .forEach((x, i) => lines.push(`  项目 ${i + 1}：${x.title.trim()}${x.summary.trim() ? `。${cut(x.summary, 220)}` : ""}`));
-    const n = soc.reviews.reduce((t, r) => t + (Number(r.count) || 0), 0);
+    const n = reviewTotal(soc);
     if (n) lines.push(`  审稿：共 ${n} 次，涉及 ${soc.reviews.filter((r) => r.venue.trim()).length} 个期刊或会议`);
+    if (soc.importance.trim() && !fullEndeavor) lines.push(`  重要性：${cut(soc.importance.replace(/\n+/g, " "), 300)}`);
+    if (soc.other.trim()) lines.push(`  其他成就：${cut(soc.other.replace(/\n+/g, "；"), 300)}`);
     if (soc.awards.trim()) lines.push(`  奖项：${cut(soc.awards.replace(/\n+/g, "；"), 300)}`);
     if (soc.media.trim()) lines.push("  有媒体报道");
     if (soc.openSource.trim()) lines.push("  有开源贡献");
@@ -402,18 +433,20 @@ export function notableReport(p: Profile): string {
   for (const { a, items } of papers) {
     out.push(`## ${a.title}${a.year ? ` (${a.year})` : ""}`, "");
     out.push(
-      `${a.total} citations indexed by Semantic Scholar. ${items.length} notable independent citations (no shared authors with the cited paper) are listed.`,
+      `${a.total} citations indexed by Semantic Scholar. ${items.length} notable citations are listed, all from papers that share no author with the cited paper (checked by Semantic Scholar author ID and by author name).`,
       "",
     );
     items.forEach((c, i) => {
       out.push(
         `### ${i + 1}. ${c.citingTitle}`,
         "",
-        `${[c.authors, c.venue, c.year].filter(Boolean).join(". ")}. Cited by ${c.citations}.${c.url ? ` ${c.url}` : ""}`,
+        // 各部分自己可能已经带句号（"et al."），拼的时候不重复加；什么都没有时不以句号开头
+        `${[c.authors, c.venue, c.year].filter(Boolean).map((x) => String(x).trim().replace(/\.$/, "")).join(". ")}${c.authors || c.venue || c.year ? ". " : ""}Cited by ${c.citations}.${c.url ? ` ${c.url}` : ""}`,
         "",
         `**How it cites the work:** ${CITE_CATEGORIES[c.category].en}`,
         "",
-        ...c.contexts.flatMap((q) => [`> ${q}`, ""]),
+        // 原句里的换行换成空格，不然换行后面的部分会跑到引用块外面
+        ...c.contexts.flatMap((q) => [`> ${q.replace(/\s*\n\s*/g, " ")}`, ""]),
       );
     });
   }
@@ -426,27 +459,41 @@ export function socReport(p: Profile): string {
   if (!socFilled(soc)) return "";
   const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
   const out: string[] = [`# Summary of Contributions — ${name}`, ""];
+  // 用户是一行一行填的。Markdown 里单个换行不算换行，原样放进去会被并成一段：
+  // 「每行一项」的内容排成列表，大段文字里的换行改成强制换行
+  const lines = (body: string) => body.split("\n").map((l) => l.trim()).filter(Boolean);
+  const prose = (body: string) =>
+    body
+      .trim()
+      .split(/\n{2,}/)
+      .map((para) => lines(para).join("  \n"))
+      .join("\n\n");
   const block = (title: string, body: string) => {
-    if (body.trim()) out.push(`**${title}**`, "", body.trim(), "");
+    if (body.trim()) out.push(`**${title}**`, "", prose(body), "");
+  };
+  const list = (title: string, body: string) => {
+    const items = lines(body);
+    if (items.length === 1) out.push(`**${title}**`, "", items[0], "");
+    else if (items.length) out.push(`**${title}**`, "", ...items.map((l) => `- ${l.replace(/^[-*•]\s*/, "")}`), "");
   };
   out.push("## I. Background", "");
   block("Main field", p.field);
-  block("Sub-areas / specializations", soc.subareas);
+  list("Sub-areas / specializations", soc.subareas);
   block("Importance, benefits, and applications", soc.importance);
   if (soc.projects.length) out.push("## II. Top Contributions", "");
   soc.projects.forEach((x, i) => {
     out.push(`### Project ${i + 1}: ${x.title.trim() || "(untitled)"}`, "");
     if (x.start.trim() || x.end.trim()) out.push(`**Dates:** ${x.start.trim() || "?"} – ${x.end.trim() || "?"}`, "");
-    block("Outputs", x.outputs);
+    list("Outputs", x.outputs);
     block("Funding", x.funding);
     block("Summary of the work", x.summary);
     block("Significance and impact", x.impact);
   });
   out.push("## III. Notable Accomplishments", "");
-  block("Awards", soc.awards);
+  list("Awards", soc.awards);
   const reviews = soc.reviews.filter((r) => r.venue.trim());
   if (reviews.length) {
-    const total = reviews.reduce((t, r) => t + (Number(r.count) || 0), 0);
+    const total = reviewTotal(soc);
     const inv = { yes: "Yes", no: "No", other: "Other", "": "" } as const;
     out.push(
       `**Peer review (${total} reviews in total)**`,
@@ -458,8 +505,10 @@ export function socReport(p: Profile): string {
     );
   }
   block("Open-source contributions", soc.openSource);
-  block("Media coverage", soc.media);
+  list("Media coverage", soc.media);
   block("Other accomplishments", soc.other);
+  // 第三部分一项都没填时不留一个空标题
+  if (out[out.length - 2] === "## III. Notable Accomplishments") out.splice(out.length - 2, 2);
   return out.join("\n");
 }
 
@@ -469,8 +518,15 @@ export function endeavorReport(p: Profile): string {
   if (!endeavorFilled(e)) return "";
   const name = `${p.firstName} ${p.lastName}`.trim() || "the Petitioner";
   const out: string[] = [`# Proposed Endeavor of ${name}`, ""];
+  // 单个换行改成强制换行，不然用户一行一行写的计划、进展会被并成一段
+  const prose = (body: string) =>
+    body
+      .trim()
+      .split(/\n{2,}/)
+      .map((para) => para.split("\n").map((l) => l.trim()).filter(Boolean).join("  \n"))
+      .join("\n\n");
   const section = (title: string, body: string) => {
-    if (body.trim()) out.push(`## ${title}`, "", body.trim(), "");
+    if (body.trim()) out.push(`## ${title}`, "", prose(body), "");
   };
   section("The Proposed Endeavor", e.statement);
   section("Substantial Merit and National Importance", p.soc.importance);

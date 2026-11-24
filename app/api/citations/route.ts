@@ -4,6 +4,7 @@
  * 按模型的实际用量扣 credit（算法和聊天一样，但加价倍数单独设得低一些）；没找到论文或没有可分析的引用时不扣。
  */
 
+import { readJson } from "@/lib/server/body";
 import { getUser } from "@/lib/server/auth";
 import { analyzeCitations } from "@/lib/server/citations";
 import { addCredits, chatCost, NOTABLE_MARKUP, NOTABLE_MIN_BALANCE } from "@/lib/server/credits";
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
       { status: 402 },
     );
   }
-  const body = await req.json().catch(() => null);
+  const body = await readJson(req, 64 * 1024).catch(() => null);
   const title = typeof body?.title === "string" ? body.title.trim().slice(0, 500) : "";
   if (title.length < 8) return Response.json({ error: "论文标题太短。" }, { status: 400 });
 

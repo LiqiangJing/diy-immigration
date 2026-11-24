@@ -13,7 +13,8 @@ import type { CitationAnalysis, CiteCategory, CiteMap as CiteMapData, Profile } 
 
 const analyses = demo.analyses as CitationAnalysis[];
 const IMPORTANCE = { high: "重要", medium: "一般", low: "较弱" } as const;
-const CAPTURED = new Date(analyses[0].analyzedAt).toLocaleDateString("zh-CN");
+// 固定按北京时间显示，免得服务器生成的页面和访客浏览器算出来的日期差一天
+const CAPTURED = new Date(analyses[0].analyzedAt).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
 type Filter = CiteCategory | "all" | "picked";
 const [FIRST, ...REST] = demo.name.split(" ");
 const baseProfile = (): Profile => ({
@@ -86,7 +87,7 @@ export default function Demo() {
               <strong>在这里</strong>
               <small>
                 点一下，每篇大约 1 分钟。读取学术记录一次 20 credits（约 $0.2），分析一篇论文的引用按用量扣，通常 150–250
-                credits（约 $1.5–2.5，人民币十几块）。注册送 200 credits，够先试一篇。
+                credits（约 $1.5–2.5，人民币十几块）。新用户注册送 200 credits（每天名额有限），够先试一篇。
               </small>
             </div>
           </div>

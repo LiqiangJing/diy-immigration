@@ -21,7 +21,7 @@ export const WORKFLOWS: Workflow[] = [
     title: "案件评估",
     desc: "逐项评估现有材料的强弱，指出缺口和下一步",
     starter: "请根据我的档案和引用的材料评估这个案件，逐项给出强弱判断、证据缺口和优先要补的材料。",
-    hint: "已自动引用案件里的全部文件。材料越全，评估越准。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。材料越全，评估越准。",
   },
   {
     id: "niw-petition-narrative",
@@ -29,7 +29,7 @@ export const WORKFLOWS: Workflow[] = [
     desc: "按 Dhanasar 三要素起草 NIW 申请信",
     only: "NIW",
     starter: "请先问我起草所需的关键信息（拟从事事业、要解决的美国问题等），信息够了再开始写。",
-    hint: "已自动引用案件里的全部文件。信里的每个事实都需要有材料支撑，缺的地方会标为待补充。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。信里的每个事实都需要有材料支撑，缺的地方会标为待补充。",
   },
   {
     id: "eb1a-petition-narrative",
@@ -37,7 +37,7 @@ export const WORKFLOWS: Workflow[] = [
     desc: "按逐项标准加 Final Merits 起草 EB-1A 申请信",
     only: "EB-1A",
     starter: "请先告诉我你打算主张哪几项标准、各自还缺什么，我确认后再开始写。",
-    hint: "已自动引用案件里的全部文件。信里的每个事实都需要有材料支撑，缺的地方会标为待补充。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。信里的每个事实都需要有材料支撑，缺的地方会标为待补充。",
   },
   {
     id: "expert-letter-drafter",
@@ -51,7 +51,7 @@ export const WORKFLOWS: Workflow[] = [
     title: "提交前审计",
     desc: "逐条核对申请信里的事实和论证，按严重程度列出问题",
     starter: "请审计我引用的 Petition Letter：逐条核对事实是否有材料支撑、论证是否符合法律标准，按严重程度列出问题。",
-    hint: "已自动引用案件里的全部文件。请再点「@ 引用案件资料」把要审计的 Petition Letter 文档加上。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。请再点「@ 引用案件资料」把要审计的 Petition Letter 文档加上。",
   },
   {
     id: "rfe-response-drafter",
@@ -65,7 +65,7 @@ export const WORKFLOWS: Workflow[] = [
     title: "表格填写指引",
     desc: "列出要交哪些表格，逐栏告诉你怎么填",
     starter: "请根据我的档案和案件材料，列出我需要提交哪些表格，并逐栏告诉我怎么填；缺的信息一次性列出来问我。",
-    hint: "已自动引用案件里的全部文件。表格请到 USCIS 官网下载最新版，照着这份指引填，填好后上传到「文件」。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。表格请到 USCIS 官网下载最新版，照着这份指引填，填好后上传到「文件」。",
     own: true,
   },
   {
@@ -73,7 +73,7 @@ export const WORKFLOWS: Workflow[] = [
     title: "Cover Letter 和 Exhibit 清单",
     desc: "放在材料包最前面的递交信和材料目录",
     starter: "请根据这个案件里已有的文档和文件，起草提交用的 Cover Letter，并列出 Exhibit 清单。",
-    hint: "已自动引用案件里的全部文件。建议在 Petition Letter 和证据都齐了之后再做这一步。",
+    hint: "已自动引用案件里的文件（一键下载的论文全文除外，要用哪篇可以点「@ 引用案件资料」加上）。建议在 Petition Letter 和证据都齐了之后再做这一步。",
     own: true,
   },
 ];

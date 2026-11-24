@@ -4,6 +4,7 @@
  * 固定扣 CITEMAP_COST 个 credit；一篇论文都没找到时不扣。
  */
 
+import { readJson } from "@/lib/server/body";
 import { getUser } from "@/lib/server/auth";
 import { buildCiteMap } from "@/lib/server/citeMap";
 import { addCredits, CITEMAP_COST } from "@/lib/server/credits";
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
   if (user.credits < CITEMAP_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${CITEMAP_COST}），请先充值。` }, { status: 402 });
   }
-  const body = await req.json().catch(() => null);
+  const body = await readJson(req, 64 * 1024).catch(() => null);
   const titles: string[] = Array.isArray(body?.titles)
     ? body.titles.filter((t: unknown): t is string => typeof t === "string" && t.trim().length >= 8).map((t: string) => t.trim().slice(0, 400)).slice(0, 12)
     : [];

@@ -1,3 +1,4 @@
+import { readJson } from "@/lib/server/body";
 import Stripe from "stripe";
 import { getUser } from "@/lib/server/auth";
 import { PACKS } from "@/lib/server/credits";
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
   if (!process.env.STRIPE_SECRET_KEY) {
     return Response.json({ error: "充值功能还没有开通（服务端未配置 STRIPE_SECRET_KEY）。" }, { status: 503 });
   }
-  const body = await req.json().catch(() => null);
+  const body = await readJson(req, 64 * 1024).catch(() => null);
   const pack = PACKS.find((p) => p.id === body?.pack);
   if (!pack) return Response.json({ error: "充值档位不存在。" }, { status: 400 });
 

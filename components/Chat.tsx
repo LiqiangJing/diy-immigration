@@ -8,7 +8,8 @@ import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/ty
 import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
 import { useAccount } from "@/lib/account";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
-import { apply, describe, parseActions, placeOf, stripActions, worldText } from "@/lib/actions";
+import { apply, describe, placeOf, readActions, stripActions, worldText } from "@/lib/actions";
+import { splitNotice } from "@/lib/notice";
 import type { ActionItem, Place, World } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
 import type { ImmigrationCase } from "@/lib/types";
@@ -100,36 +101,52 @@ export default function Chat({
     ops ? { profile: ops.profile, cases: ops.cases, linkedCaseId: ops.linkedCaseId, attachments: allAttachments(list) } : null;
 
   /** 用户点了「应用」：依次执行，前一个的结果（比如新建的案件）后一个能用上 */
+  const applying = useRef(false);
   async function runActions(msgId: string, ids: string[]) {
-    if (!ops || !conv) return;
-    const w = world()!;
-    const done: Record<string, Pick<ActionItem, "status" | "note">> = {};
-    for (const item of messages.find((m) => m.id === msgId)?.actions ?? []) {
-      if (!ids.includes(item.id) || item.status !== "pending") continue;
-      const r = apply(item.action, w);
-      if (r.error) {
-        done[item.id] = { status: "pending", note: r.error };
-        continue;
-      }
-      if (r.copy) {
-        const data = await getFile(r.copy.from);
-        if (!data) {
-          done[item.id] = { status: "pending", note: "文件内容已经不在了，请重新上传。" };
+    if (!ops || !conv || applying.current) return; // 正在应用时不重复执行（连点两下）
+    applying.current = true;
+    try {
+      const w = world()!;
+      let profileChanged = false;
+      let casesChanged = false;
+      const done: Record<string, Pick<ActionItem, "status" | "note" | "place">> = {};
+      for (const item of messages.find((m) => m.id === msgId)?.actions ?? []) {
+        if (!ids.includes(item.id) || item.status !== "pending") continue;
+        const r = apply(item.action, w);
+        if (r.error) {
+          done[item.id] = { status: "pending", note: r.error };
           continue;
         }
-        await putFile(r.copy.to, data);
+        if (r.copy) {
+          const data = await getFile(r.copy.from);
+          if (!data) {
+            done[item.id] = { status: "pending", note: "文件内容已经不在了，请重新上传。" };
+            continue;
+          }
+          await putFile(r.copy.to, data);
+        }
+        if (r.profile) {
+          w.profile = r.profile;
+          profileChanged = true;
+        }
+        if (r.cases) {
+          w.cases = r.cases;
+          casesChanged = true;
+        }
+        // 记下实际改到了哪一页，之后点「去看」不用再按现在的数据重新猜
+        done[item.id] = { status: "applied", place: placeOf(item.action, w) };
       }
-      if (r.profile) w.profile = r.profile;
-      if (r.cases) w.cases = r.cases;
-      done[item.id] = { status: "applied" };
+      // 只提交确实改了的那一份，免得把这期间别处的改动盖掉
+      ops.commit({ profile: profileChanged ? w.profile : undefined, cases: casesChanged ? w.cases : undefined });
+      patchConv(conv.id, (c) => ({
+        ...c,
+        messages: c.messages.map((m) =>
+          m.id === msgId ? { ...m, actions: m.actions?.map((x) => (done[x.id] ? { ...x, ...done[x.id] } : x)) } : m,
+        ),
+      }));
+    } finally {
+      applying.current = false;
     }
-    ops.commit({ profile: w.profile, cases: w.cases });
-    patchConv(conv.id, (c) => ({
-      ...c,
-      messages: c.messages.map((m) =>
-        m.id === msgId ? { ...m, actions: m.actions?.map((x) => (done[x.id] ? { ...x, ...done[x.id] } : x)) } : m,
-      ),
-    }));
   }
   const skipAction = (msgId: string, id: string) =>
     conv &&
@@ -143,6 +160,9 @@ export default function Chat({
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages.length, messages[messages.length - 1]?.text]);
+
+  // 离开这个会话或文档时（聊天框被卸载），正在生成的回复也停下：不然它会在后台继续写、继续计费，回来时页面上却看不出来
+  useEffect(() => () => abort.current?.abort(), []);
 
   async function addFiles(files: FileList | File[]) {
     const { added, problems } = await saveUploads(files);
@@ -169,6 +189,14 @@ export default function Chat({
     text = text.trim();
     if (busy || (!text && pending.length === 0)) return;
     if (!account.guard()) return;
+    // 每次发送都要把这个对话里所有的附件一起带上，太大的话服务器收不下
+    const bytes = [...allAttachments(messages), ...pending].reduce((n, a) => n + (a.size || 0), 0);
+    if (bytes > 55 * 1024 * 1024) {
+      setNotice(
+        `这个对话里的文件加起来有 ${Math.round(bytes / 1024 / 1024)} MB，超过了一次能发送的上限（约 55 MB）。请去掉一些文件${docCtx ? "，或者点上方的「清空对话」" : "，或者新开一个对话"}再试。`,
+      );
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: uid(),
@@ -229,13 +257,17 @@ export default function Chat({
 
     let raw = "";
     let suffix = "";
+    // 模型写的部分（服务端追加的提示有记号隔开，不能当成文档或操作的内容）
+    const model = () => splitNotice(raw).body;
     // 文档模式下，回复里的文档标签不显示在聊天里
-    const visible = () =>
-      docCtx
-        ? stripDocBlocks(raw) || (raw.includes("<doc_") ? "_正在修改文档…_" : "")
+    const visible = () => {
+      const t = model();
+      return docCtx
+        ? stripDocBlocks(t) || (t.includes("<doc_") ? "_正在修改文档…_" : "")
         : ops
-          ? stripActions(raw) || (raw.includes("<action>") ? "_正在整理要填入的内容…_" : "")
-          : raw;
+          ? stripActions(t) || (t.includes("<action>") ? "_正在整理要填入的内容…_" : "")
+          : t;
+    };
     docCtx?.beginTurn();
 
     try {
@@ -271,7 +303,7 @@ export default function Chat({
         if (!chunk) continue;
         raw += chunk;
         if (docCtx) {
-          const written = liveWrite(raw);
+          const written = liveWrite(model());
           if (written !== null) docCtx.setContent(written);
         }
         setBot(visible());
@@ -281,11 +313,15 @@ export default function Chat({
         ? "\n\n> 已停止生成。"
         : `\n\n> ⚠️ ${e instanceof Error ? e.message : "请求失败"}`;
     } finally {
-      let body = raw;
+      const { body: text0, notice } = splitNotice(raw);
+      let body = text0;
       if (docCtx) {
         const notes: string[] = [];
-        if (liveWrite(raw) !== null) notes.push("已写入文档");
-        const edits = parseEdits(raw);
+        const written = liveWrite(text0);
+        // 写到一半就断了（回复被截断、出错或被停止）：文档里是没写完的内容，要明说
+        const cut = /<doc_(write|edit)>/.test(text0.replace(/<doc_(write|edit)>[\s\S]*?<\/doc_\1>/g, ""));
+        if (written !== null) notes.push(cut && !text0.includes("</doc_write>") ? "文档只写了一部分就中断了" : "已写入文档");
+        const edits = parseEdits(text0);
         if (edits.length) {
           const r = applyEdits(docCtx.getContent(), edits);
           if (r.applied) {
@@ -294,15 +330,20 @@ export default function Chat({
           }
           if (r.failed) notes.push(`有 ${r.failed} 处修改没能在文档里定位到原文，已跳过`);
         }
-        body = stripDocBlocks(raw);
+        if (cut && written === null) notes.push("有一处修改没写完就中断了，没有应用");
+        body = stripDocBlocks(text0);
         if (notes.length) body += `\n\n> ✏️ ${notes.join("；")}（可在文档上方撤销）`;
       }
       let items: ActionItem[] | undefined;
       if (ops && !docCtx) {
-        items = parseActions(raw).map((action) => ({ id: uid(), action, status: "pending" as const }));
-        body = stripActions(raw);
+        const read = readActions(text0);
+        items = read.actions.map((action) => ({ id: uid(), action, status: "pending" as const }));
+        body = stripActions(text0);
         if (!body && items.length) body = "我整理成了下面的卡片，确认无误后点「应用」。";
+        if (read.failed) body += `\n\n> 有 ${read.failed} 项要填的内容没能整理成卡片，可以让我「重新整理一次」。`;
       }
+      if (notice) body += `\n\n${notice}`;
+      if (!(body + suffix).trim() && !items?.length) body = "> 没有收到回复，请再试一次。";
       setBot((body + suffix).trim(), items);
       setBusy(false);
       abort.current = null;
@@ -334,7 +375,10 @@ export default function Chat({
               <span className="chip-size">{fmtSize(a.size)}</span>
               <button
                 aria-label={`移除 ${a.name}`}
-                onClick={() => setPending((p) => p.filter((x) => x.id !== a.id))}
+                onClick={() => {
+                  setPending((p) => p.filter((x) => x.id !== a.id));
+                  account.releaseFiles([a.id]); // 刚上传还没发出去的文件不留在云端；从案件里引用的文件有案件在用，不会被删
+                }}
               >
                 ×
               </button>
@@ -517,7 +561,7 @@ export default function Chat({
                           <strong>{d.title}</strong>
                           {item.status === "applied" && <span className="tag">已应用</span>}
                           {item.status === "applied" && ops && w && (
-                            <button className="link" onClick={() => ops.open(placeOf(item.action, w))}>
+                            <button className="link" onClick={() => ops.open(item.place ?? placeOf(item.action, w))}>
                               去看填好的页面 →
                             </button>
                           )}

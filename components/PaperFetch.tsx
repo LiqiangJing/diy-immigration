@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { useAccount } from "@/lib/account";
 import { putFile } from "@/lib/files";
 import { isSelected, primaryRecord } from "@/lib/profile";
+import { begin, end, note, useRunning } from "@/lib/running";
+import { normTitle } from "@/lib/titles";
 import type { Profile } from "@/lib/profile";
 import { uid } from "@/lib/types";
 import type { Attachment, DocFile, ImmigrationCase } from "@/lib/types";
@@ -17,7 +19,9 @@ type Props = {
 
 type Paper = { key: string; title: string; kind: "own" | "citing"; url?: string; note: string };
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const norm = normTitle;
+// 这几种文档是用档案自动生成的清单，里面本来就列着所有论文的标题，不能算「文书里引用了这篇」
+const LIST_KINDS = new Set(["论文与引用记录", "重要引用", "Summary of Contributions"]);
 const OWN_PREFIX = "Paper - ";
 const CITING_PREFIX = "Citing - ";
 const PREPRINT = " [arXiv preprint]";
@@ -32,11 +36,14 @@ export default function PaperFetch({ c, docs, profile: p, patchCase }: Props) {
   const account = useAccount();
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [status, setStatus] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
+  const run0 = useRunning();
+  const job = `papers:${c.id}`;
+  const busy = Boolean(run0.running[job]);
+  const status = run0.notes[job] ?? {};
+  const setStatus = (key: string, text: string) => note(job, key, text);
 
   const files = c.files ?? [];
-  const docText = useMemo(() => norm(docs.map((d) => d.content).join("\n")), [docs]);
+  const docText = useMemo(() => norm(docs.filter((d) => !LIST_KINDS.has(d.kind)).map((d) => d.content).join("\n")), [docs]);
 
   const papers = useMemo(() => {
     const list: Paper[] = [];
@@ -55,8 +62,10 @@ export default function PaperFetch({ c, docs, profile: p, patchCase }: Props) {
     return list;
   }, [p]);
 
-  const have = (x: Paper) => files.some((f) => f.name === fileName(x) || f.name === fileName(x, true));
-  const havePreprint = (x: Paper) => files.some((f) => f.name === fileName(x, true));
+  // 认这篇论文是不是已经在案件里：存了完整标题的按标题认（文件名会被截短，两篇题目开头一样的论文文件名可能相同）
+  const mine = (x: Paper) => files.filter((f) => isPaperFile(f) && (f.title ? norm(f.title) === x.key : f.name === fileName(x) || f.name === fileName(x, true)));
+  const have = (x: Paper) => mine(x).length > 0;
+  const havePreprint = (x: Paper) => mine(x).some((f) => f.name.includes(PREPRINT));
   // 标题出现在案件文档里，说明文书用到了这篇
   const used = (x: Paper) => x.key.length > 12 && docText.includes(x.key);
   // 默认勾选：文书里用到的，以及重要引用的论文
@@ -66,9 +75,9 @@ export default function PaperFetch({ c, docs, profile: p, patchCase }: Props) {
 
   async function run() {
     if (!account.guard(0)) return;
-    setBusy(true);
+    if (!begin(job)) return;
     for (const x of todo) {
-      setStatus((s) => ({ ...s, [x.key]: "下载中…" }));
+      setStatus(x.key, "下载中…");
       try {
         const res = await fetch("/api/paper", {
           method: "POST",
@@ -78,22 +87,29 @@ export default function PaperFetch({ c, docs, profile: p, patchCase }: Props) {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.data) throw new Error(data?.error ?? "下载失败");
         const pre = data.version === "preprint";
-        const att: Attachment = { id: uid(), name: fileName(x, pre), type: "application/pdf", size: data.size };
+        const att: Attachment = { id: uid(), name: fileName(x, pre), type: "application/pdf", size: data.size, title: x.title };
         await putFile(att.id, data.data);
-        patchCase((cc) => ({ ...cc, files: [...(cc.files ?? []), att] }));
-        setStatus((s) => ({
-          ...s,
-          [x.key]: !pre
+        // 用最新的文件列表判断：这期间如果已经有了同一篇（比如在别的页面又点了一次），就不重复加
+        patchCase((cc) => {
+          const list = cc.files ?? [];
+          if (list.some((f) => isPaperFile(f) && f.title && norm(f.title) === x.key)) return cc;
+          const taken = list.some((f) => f.name === att.name);
+          return { ...cc, files: [...list, taken ? { ...att, name: att.name.replace(/\.pdf$/, ` (${att.id.slice(-4)}).pdf`) } : att] };
+        });
+        setStatus(
+          x.key,
+          !pre
             ? `已保存正式发表版本（${data.source}）`
             : data.venue
               ? `已保存 arXiv 预印本。这篇已在 ${data.venue} 正式发表，建议自己下载正式版，在文件列表里点「替换」`
               : "已保存 arXiv 预印本（没有查到正式发表的版本）",
-        }));
+        );
       } catch (e) {
-        setStatus((s) => ({ ...s, [x.key]: e instanceof Error ? e.message : "下载失败" }));
+        setStatus(x.key, e instanceof Error ? e.message : "下载失败");
+        setPicked((s) => ({ ...s, [x.key]: false })); // 下不到的先取消勾选，免得每次都重试
       }
     }
-    setBusy(false);
+    end(job);
   }
 
   if (papers.length === 0) return null;

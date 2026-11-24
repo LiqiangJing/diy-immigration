@@ -1,3 +1,4 @@
+import { readJson } from "@/lib/server/body";
 import { getUser } from "@/lib/server/auth";
 import { alipayConfigured, createAlipayOrder } from "@/lib/server/alipay";
 
@@ -10,7 +11,7 @@ export async function POST(req: Request) {
   if (!alipayConfigured()) {
     return Response.json({ error: "支付宝充值还没有开通（服务端未配置 ALIPAY_*）。" }, { status: 503 });
   }
-  const body = await req.json().catch(() => null);
+  const body = await readJson(req, 64 * 1024).catch(() => null);
   const origin = process.env.APP_URL || req.headers.get("origin") || new URL(req.url).origin;
   const mobile = /Mobile|Android|iPhone|iPad/i.test(req.headers.get("user-agent") ?? "");
   try {

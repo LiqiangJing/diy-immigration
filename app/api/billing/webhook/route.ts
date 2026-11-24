@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { readBytes, TooLarge } from "@/lib/server/body";
 import { addCredits, PACKS } from "@/lib/server/credits";
 
 export const runtime = "nodejs";
@@ -12,7 +13,13 @@ export async function POST(req: Request) {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!secret || !key) return new Response("not configured", { status: 503 });
 
-  const payload = await req.text();
+  let payload: string;
+  try {
+    payload = new TextDecoder().decode(await readBytes(req, 1024 * 1024));
+  } catch (e) {
+    if (e instanceof TooLarge) return new Response("too large", { status: 413 });
+    throw e;
+  }
   let event: Stripe.Event;
   try {
     event = await new Stripe(key).webhooks.constructEventAsync(

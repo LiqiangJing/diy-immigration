@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useAccount } from "@/lib/account";
 import { CITE_CATEGORIES, isSelected } from "@/lib/profile";
+import { begin, end, useRunning } from "@/lib/running";
+import { normTitle } from "@/lib/titles";
 import type { CitationAnalysis, CiteCategory, Profile as ProfileData } from "@/lib/profile";
 
 type Props = {
@@ -11,13 +13,14 @@ type Props = {
 };
 
 const IMPORTANCE = { high: "重要", medium: "一般", low: "较弱" } as const;
-const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const key = normTitle;
 
 /** 「我的档案」里的重要引用（Notable Citations）：逐篇论文分析别人是怎么引用它的 */
 export default function Notable({ profile: p, setProfile }: Props) {
   const account = useAccount();
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const run = useRunning();
+  const busy = run.running.notable ?? ""; // 正在分析的论文标题
+  const error = run.errors.notable ?? "";
   const [custom, setCustom] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [filter, setFilter] = useState<Record<string, CiteCategory | "all" | "picked">>({});
@@ -38,8 +41,8 @@ export default function Notable({ profile: p, setProfile }: Props) {
 
   async function analyze(title: string) {
     if (!account.guard(min)) return;
-    setBusy(title);
-    setError("");
+    if (!begin("notable", title)) return;
+    let problem = "";
     try {
       const res = await fetch("/api/citations", {
         method: "POST",
@@ -49,16 +52,18 @@ export default function Notable({ profile: p, setProfile }: Props) {
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.analysis) throw new Error(data?.error ?? "分析失败，请稍后再试。");
       const a: CitationAnalysis = data.analysis;
-      setProfile((prev) => ({
-        ...prev,
-        analyses: [...prev.analyses.filter((x) => key(x.title) !== key(a.title)), a],
-        updatedAt: Date.now(),
-      }));
+      setProfile((prev) => {
+        // 重新分析时，之前手动勾选或取消的结果保留下来
+        const old = prev.analyses.find((x) => key(x.title) === key(a.title));
+        const picked = new Map((old?.items ?? []).filter((i) => i.selected !== undefined).map((i) => [i.citingTitle, i.selected]));
+        const kept = { ...a, items: a.items.map((i) => (picked.has(i.citingTitle) ? { ...i, selected: picked.get(i.citingTitle) } : i)) };
+        return { ...prev, analyses: [...prev.analyses.filter((x) => key(x.title) !== key(a.title)), kept], updatedAt: Date.now() };
+      });
       setCustom("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "分析失败");
+      problem = e instanceof Error ? e.message : "分析失败";
     } finally {
-      setBusy("");
+      end("notable", problem);
       account.refresh();
     }
   }
@@ -165,7 +170,7 @@ export default function Notable({ profile: p, setProfile }: Props) {
             <div className="cite-list">
               {list.length === 0 && a.items.length > 0 && <small>这一类下面没有引用。</small>}
               {list.map((c) => (
-                <div className="cite" key={c.citingTitle}>
+                <div className="cite" key={`${c.citingTitle}|${c.url}`}>
                   <label className="cite-head">
                     <input
                       type="checkbox"

@@ -1,4 +1,5 @@
 import { alipayConfigured, handleAlipayNotify } from "@/lib/server/alipay";
+import { readBytes, TooLarge } from "@/lib/server/body";
 
 export const runtime = "nodejs";
 
@@ -6,7 +7,14 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!alipayConfigured()) return new Response("fail", { status: 503 });
   const params: Record<string, string> = {};
-  new URLSearchParams(await req.text()).forEach((v, k) => {
+  let text: string;
+  try {
+    text = new TextDecoder().decode(await readBytes(req, 64 * 1024)); // 这个地址谁都能访问，不收过大的内容
+  } catch (e) {
+    if (e instanceof TooLarge) return new Response("fail", { status: 413 });
+    throw e;
+  }
+  new URLSearchParams(text).forEach((v, k) => {
     params[k] = v;
   });
   const ok = handleAlipayNotify(params);

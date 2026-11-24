@@ -5,6 +5,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Chat from "@/components/Chat";
 import type { DocContext, Library } from "@/components/Chat";
+import { isPaperFile } from "@/components/PaperFetch";
+import { useAccount } from "@/lib/account";
+import { fileIds } from "@/lib/sync";
 import { workflowById } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
 import type { Conversation, DocFile } from "@/lib/types";
@@ -137,6 +140,8 @@ export function DocWorkspace({
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [pane, setPane] = useState<"doc" | "chat">("doc"); // 窄屏时切换
   const [copied, setCopied] = useState(false);
+  const [chatRound, setChatRound] = useState(0); // 清空对话后换一个新的聊天框
+  const account = useAccount();
 
   // 流式输出期间 Chat 需要读到最新内容，而不是发消息那一刻的闭包
   const latest = useRef({ content: doc.content, snapshotted: false, patch });
@@ -163,6 +168,7 @@ export function DocWorkspace({
           content,
           updatedAt: Date.now(),
           undo: first ? before : d.undo,
+          redo: undefined,
         }));
       },
     }),
@@ -194,13 +200,23 @@ export function DocWorkspace({
             onChange={(e) => patch((d) => ({ ...d, title: e.target.value, updatedAt: Date.now() }))}
           />
           <div className="doc-actions">
+            {/* 撤销和恢复互为反操作：点哪个都不会丢内容，点错了再点一次另一个就回来 */}
             {doc.undo !== undefined && (
               <button
                 className="btn-ghost small"
-                title="恢复到 AI 上一次修改之前的内容"
-                onClick={() => patch((d) => ({ ...d, content: d.undo ?? d.content, undo: undefined }))}
+                title="回到 AI 上一次修改之前的内容（之后可以再恢复）"
+                onClick={() => patch((d) => ({ ...d, content: d.undo ?? d.content, undo: undefined, redo: d.content, updatedAt: Date.now() }))}
               >
                 ↩ 撤销 AI 修改
+              </button>
+            )}
+            {doc.undo === undefined && doc.redo !== undefined && (
+              <button
+                className="btn-ghost small"
+                title="回到撤销之前的内容"
+                onClick={() => patch((d) => ({ ...d, content: d.redo ?? d.content, redo: undefined, undo: d.content, updatedAt: Date.now() }))}
+              >
+                ↪ 恢复
               </button>
             )}
             <div className="seg small">
@@ -266,8 +282,22 @@ export function DocWorkspace({
       </section>
 
       <section className="chat-pane">
+        {doc.chat.length > 0 && (
+          <button
+            className="link clear-chat"
+            title="文档内容不受影响。对话太长、或者带了发不出去的文件时可以清空重来"
+            onClick={() => {
+              if (!confirm("清空这份文档右边的对话记录？文档内容不受影响。")) return;
+              account.releaseFiles(fileIds(doc.chat));
+              patch((d) => ({ ...d, chat: [] }));
+              setChatRound((n) => n + 1);
+            }}
+          >
+            清空对话
+          </button>
+        )}
         <Chat
-          key={doc.id}
+          key={`${doc.id}:${chatRound}`}
           conv={conv}
           addConv={() => {}}
           patchConv={(_, fn) =>
@@ -280,7 +310,8 @@ export function DocWorkspace({
           firstName=""
           docCtx={ctx}
           library={library}
-          initialPending={workflow && AUTO_CITE.has(workflow.id) ? library?.files : undefined}
+          // 自动带上案件里的材料，但不带一键下载的论文全文：十几篇论文每轮对话都发一遍，又慢又贵；要用哪篇可以手动引用
+          initialPending={workflow && AUTO_CITE.has(workflow.id) ? library?.files.filter((f) => !isPaperFile(f)) : undefined}
           contextLine={contextLine}
           intro={
             workflow

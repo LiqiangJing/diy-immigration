@@ -4,6 +4,8 @@
  */
 
 import { getLocalFile, hasLocalFile, uploadFile } from "./files";
+import { emptyProfile } from "./profile";
+import { uid } from "./types";
 
 export const SYNC_KEYS = ["conversations", "cases", "profile", "docs"] as const;
 export type SyncKey = (typeof SYNC_KEYS)[number];
@@ -12,6 +14,10 @@ export type SyncMeta = {
   user: string; // 这份本地数据上次是和哪个账号同步的
   revs: Partial<Record<SyncKey, number>>;
   dirty: Partial<Record<SyncKey, boolean>>; // 本地有还没传上去的改动
+  /** 每份数据上次和服务器对齐时内容的指纹。本地内容的指纹和它不一样，就说明本地有服务器上没有的改动（不管当时有没有登录） */
+  hash?: Partial<Record<SyncKey, string>>;
+  /** 本机存储满了、这份数据没能存进浏览器：下次打开时本机的那份是旧的，要以服务器为准 */
+  stale?: Partial<Record<SyncKey, boolean>>;
 };
 
 const META_KEY = "pathway.sync";
@@ -20,7 +26,9 @@ export function loadMeta(): SyncMeta | null {
   try {
     const raw = localStorage.getItem(META_KEY);
     const m = raw ? (JSON.parse(raw) as SyncMeta) : null;
-    return m && typeof m.user === "string" ? { user: m.user, revs: m.revs ?? {}, dirty: m.dirty ?? {} } : null;
+    return m && typeof m.user === "string"
+      ? { user: m.user, revs: m.revs ?? {}, dirty: m.dirty ?? {}, hash: m.hash, stale: m.stale }
+      : null;
   } catch {
     return null;
   }
@@ -38,30 +46,48 @@ export function clearMeta() {
   } catch {}
 }
 
+/** 内容的指纹（不用于安全，只用来判断内容变没变） */
+export function hashOf(s: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b + c, 0x85ebca6b) ^ (b >>> 13);
+  }
+  return `${s.length}.${(a >>> 0).toString(36)}.${(b >>> 0).toString(36)}`;
+}
+
+/* ---------- 换账号时暂存还没上传的内容 ---------- */
+
+const STASH_KEY = "pathway.stash";
+type Stash = { user: string; data: Partial<Record<SyncKey, unknown>> };
+
+/** 这个浏览器要换成另一个账号的数据了：把原账号还没传上去的内容存起来，等原账号再登录时合并回去 */
+export function saveStash(user: string, data: Partial<Record<SyncKey, unknown>>) {
+  if (!Object.keys(data).length) return;
+  try {
+    localStorage.setItem(STASH_KEY, JSON.stringify({ user, data } satisfies Stash));
+  } catch {}
+}
+
+/** 取出（并删掉）之前为这个账号暂存的内容 */
+export function takeStash(user: string): Partial<Record<SyncKey, unknown>> | null {
+  try {
+    const raw = localStorage.getItem(STASH_KEY);
+    const st = raw ? (JSON.parse(raw) as Stash) : null;
+    if (!st || st.user !== user) return null;
+    localStorage.removeItem(STASH_KEY);
+    return st.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
 type Item = { id?: string; updatedAt?: number };
 
 export const isEmpty = (key: SyncKey, v: unknown) =>
   key === "profile" ? !((v as Item | null)?.updatedAt ?? 0) : !Array.isArray(v) || v.length === 0;
-
-/**
- * 两边都有改动时合并：列表按 id 合并，同一个 id 取修改时间新的（没有修改时间的取本地）；档案整份取新的。
- */
-export function merge(key: SyncKey, local: unknown, server: unknown): unknown {
-  if (key === "profile") {
-    const l = (local ?? {}) as Item;
-    const s = (server ?? {}) as Item;
-    return (s.updatedAt ?? 0) > (l.updatedAt ?? 0) ? s : l;
-  }
-  const l = Array.isArray(local) ? (local as Item[]) : [];
-  const s = Array.isArray(server) ? (server as Item[]) : [];
-  const byId = new Map(s.filter((x) => x?.id).map((x) => [x.id as string, x]));
-  const out = l.map((x) => {
-    const other = x?.id ? byId.get(x.id) : undefined;
-    if (other) byId.delete(x.id as string);
-    return other && (other.updatedAt ?? 0) > (x.updatedAt ?? 0) ? other : x;
-  });
-  return [...out, ...byId.values()];
-}
 
 /* ---------- 三方合并 ---------- */
 
@@ -120,8 +146,12 @@ export function merge3(base: unknown, local: unknown, server: unknown, newFirst 
     if (L && S && B) {
       const out: unknown[] = [];
       for (const [k, l] of L) {
-        if (S.has(k)) out.push(merge3(B.get(k), l, S.get(k)));
-        else if (!B.has(k) || !same(l, B.get(k))) out.push(l); // 这边新增的，或者那边删了但这边改过的
+        if (S.has(k)) {
+          const v = S.get(k);
+          // 不知道这一项原来的样子时（没有 base），两边改得不一样的地方以修改时间新的为准
+          const newer = !B.has(k) && isObj(l) && isObj(v) && typeof l.updatedAt === "number" && typeof v.updatedAt === "number" && v.updatedAt > l.updatedAt;
+          out.push(newer ? merge3(undefined, v, l) : merge3(B.get(k), l, v));
+        } else if (!B.has(k) || !same(l, B.get(k))) out.push(l); // 这边新增的，或者那边删了但这边改过的
       }
       const added: unknown[] = [];
       for (const [k, v] of S) {
@@ -151,9 +181,45 @@ export function merge3(base: unknown, local: unknown, server: unknown, newFirst 
   return local;
 }
 
-export async function fetchAll(): Promise<Record<string, { value: string; rev: number }> | null> {
+/** 没有 base 可对照时用的「空白」：这样只有一边填了的地方会被保留，而不是被另一边的空白盖掉 */
+const blank = (key: SyncKey): unknown => (key === "profile" ? emptyProfile() : []);
+
+/** 把服务器上的版本并进本地的内容。base 是上次对齐时的内容；不知道的话传 undefined */
+export function mergeKey(key: SyncKey, base: unknown, local: unknown, server: unknown): unknown {
+  if (server === null || server === undefined) return local;
+  const known = base !== undefined && base !== null;
+  const merged = merge3(known ? base : blank(key), local, server, key !== "profile");
+  return key === "docs" && known ? withConflictCopies(base, local, server, merged) : merged;
+}
+
+/**
+ * 同一份文档的正文在两台设备上都改过：合并结果里留的是这台设备上的版本，
+ * 另一台设备上的版本另存成一份副本，免得悄悄丢掉。
+ */
+function withConflictCopies(base: unknown, local: unknown, server: unknown, merged: unknown): unknown {
+  if (!Array.isArray(base) || !Array.isArray(local) || !Array.isArray(server) || !Array.isArray(merged)) return merged;
+  type Doc = { id?: string; title?: string; content?: string; [k: string]: unknown };
+  const byId = (list: unknown[]) => new Map((list as Doc[]).filter((d) => d?.id).map((d) => [d.id as string, d]));
+  const B = byId(base);
+  const S = byId(server);
+  const out = [...(merged as Doc[])];
+  for (const l of local as Doc[]) {
+    const b = l?.id ? B.get(l.id) : undefined;
+    const v = l?.id ? S.get(l.id) : undefined;
+    if (!b || !v || typeof l.content !== "string" || typeof v.content !== "string") continue;
+    if (l.content === v.content || l.content === b.content || v.content === b.content) continue;
+    const copyId = `${l.id}-c${hashOf(v.content).split(".")[1]}`;
+    if (out.some((d) => d?.id === copyId)) continue;
+    const at = out.findIndex((d) => d?.id === l.id);
+    out.splice(at + 1, 0, { ...v, id: copyId, title: `${v.title || "文档"}（另一台设备上的版本）`, chat: [], undo: undefined, redo: undefined });
+  }
+  return out;
+}
+
+export async function fetchAll(): Promise<Record<string, { value: string; rev: number }> | "auth" | null> {
   try {
     const res = await fetch("/api/data", { cache: "no-store" });
+    if (res.status === 401) return "auth";
     if (!res.ok) return null;
     return (await res.json()).items ?? {};
   } catch {

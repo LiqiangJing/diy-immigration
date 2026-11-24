@@ -143,6 +143,8 @@ export default function Profile({ profile: p, setProfile, initialTab, only = nul
   const [needUpload, setNeedUpload] = useState(false);
   const isGs = /scholar\.google\./.test(p.scholarUrl) && /[?&]user=/.test(p.scholarUrl);
   const isS2 = /semanticscholar\.org\/author\/.*\d/.test(p.s2Url);
+  // 一页显示 100 篇的主页地址，上传另存的网页时用
+  const gsFullUrl = `https://scholar.google.com/citations?hl=en&user=${encodeURIComponent(p.scholarUrl.match(/[?&]user=([\w-]+)/)?.[1] ?? "")}&cstart=0&pagesize=100`;
   const fullName = `${p.firstName} ${p.lastName}`.trim();
   const account = useAccount();
   const cost = account.me?.scholarCost ?? 0;
@@ -169,8 +171,10 @@ export default function Profile({ profile: p, setProfile, initialTab, only = nul
       more: Boolean(data.author.more),
     };
     setProfile((prev) => {
-      // 还没有主要来源，或者重新获取的就是主要来源时，同步更新上面的三个数字
-      const isMain = !prev.records.some((r) => r.source === prev.primarySource) || prev.primarySource === rec.source;
+      // 重新获取的就是主要来源，或者三个数字还空着时，才用这份记录填上面的三个数字。
+      // 用户手动填过数字的（primarySource 为空但数字不空）不动它，要换可以点「用这组数字」
+      const manual = !prev.primarySource && Boolean(prev.papers.trim() || prev.citations.trim() || prev.hIndex.trim());
+      const isMain = prev.primarySource === rec.source || (!prev.records.some((r) => r.source === prev.primarySource) && !manual);
       return {
         ...prev,
         records: [...prev.records.filter((r) => r.source !== rec.source), rec],
@@ -381,9 +385,15 @@ export default function Profile({ profile: p, setProfile, initialTab, only = nul
           <div className="gs-upload">
             <strong>换一种方式：上传你自己保存的 Google Scholar 主页</strong>
             <ol>
-              <li>在浏览器里打开你的 Google Scholar 主页，点页面底部的 SHOW MORE，直到所有论文都显示出来。</li>
-              <li>按 Cmd + S（Windows 是 Ctrl + S），格式选「网页，仅 HTML」，保存。</li>
-              <li>把保存下来的 .html 文件选到这里。</li>
+              <li>
+                点这个链接在浏览器里打开你的主页：
+                <a href={gsFullUrl} target="_blank" rel="noreferrer">
+                  一页显示 100 篇的主页
+                </a>
+                。一定要用这个链接：主页默认只显示前 20 篇，直接保存会漏掉后面的。
+              </li>
+              <li>在打开的页面上按 Cmd + S（Windows 是 Ctrl + S），格式选「网页，仅 HTML」，保存。</li>
+              <li>把保存下来的 .html 文件选到这里。论文超过 100 篇的，只会读取被引最多的前 100 篇。</li>
             </ol>
             <input
               type="file"

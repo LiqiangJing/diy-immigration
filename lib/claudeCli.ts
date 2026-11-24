@@ -63,7 +63,12 @@ export function streamViaClaudeCli(opts: {
       let outChars = 0;
 
       const send = (s: string) => {
-        if (!closed) controller.enqueue(encoder.encode(s));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(s));
+        } catch {
+          // 页面那头已经断开（用户点了停止），后面的输出丢掉就行
+        }
       };
       const close = () => {
         if (closed) return;

@@ -167,6 +167,16 @@ export async function POST(req: Request) {
   if (user.credits < SCHOLAR_COST) {
     return Response.json({ error: `Credit 余额不足（需要 ${SCHOLAR_COST}），请先充值。` }, { status: 402 });
   }
+  const release = hold(`scholar-paid:${user.id}`, 1);
+  if (!release) return busy();
+  try {
+    return await upload(req, user);
+  } finally {
+    release();
+  }
+}
+
+async function upload(req: Request, user: { id: string }): Promise<Response> {
   let body;
   try {
     body = await readJson(req, 9_000_000);

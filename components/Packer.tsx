@@ -42,6 +42,51 @@ function b64ToBytes(b64: string) {
   return bytes;
 }
 
+/** 读 JPEG 里记的拍摄方向（EXIF Orientation）。1 是正的；读不到也当作 1 */
+function jpegOrientation(b: Uint8Array): number {
+  if (b[0] !== 0xff || b[1] !== 0xd8) return 1;
+  let i = 2;
+  while (i + 4 < b.length && b[i] === 0xff) {
+    const marker = b[i + 1];
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (marker === 0xe1 && b[i + 4] === 0x45 && b[i + 5] === 0x78 && b[i + 6] === 0x69 && b[i + 7] === 0x66) {
+      const t = i + 10; // TIFF 头
+      const le = b[t] === 0x49;
+      const u16 = (o: number) => (le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1]);
+      const u32 = (o: number) => (le ? u16(o) | (u16(o + 2) << 16) : (u16(o) << 16) | u16(o + 2));
+      const ifd = t + u32(t + 4);
+      const n = u16(ifd);
+      for (let k = 0; k < n && ifd + 14 + k * 12 <= b.length; k++) {
+        const e = ifd + 2 + k * 12;
+        if (u16(e) === 0x0112) return u16(e + 8) || 1;
+      }
+      return 1;
+    }
+    if (marker === 0xda || len < 2) break;
+    i += 2 + len;
+  }
+  return 1;
+}
+
+/**
+ * 手机拍的照片常常是横着存的，另外记一个「显示时要转多少度」。合成 PDF 时不认这个记号，
+ * 竖着拍的证书会横过来。所以带了这个记号的照片先按正的方向重画一遍。
+ */
+async function uprightJpeg(bytes: Uint8Array): Promise<Uint8Array> {
+  if (jpegOrientation(bytes) === 1 || typeof createImageBitmap !== "function") return bytes;
+  try {
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: "image/jpeg" }), { imageOrientation: "from-image" });
+    const canvas = document.createElement("canvas");
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.92));
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : bytes;
+  } catch {
+    return bytes;
+  }
+}
+
 export default function Packer({ c, docs, petitioner, patchCase }: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ pages: number; warnings: string[] } | null>(null);
@@ -69,11 +114,13 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
       (f): Row => ({
         id: f.id,
         source: "文件",
-        // 一键下载的论文：目录里只显示论文标题，不带「Paper - 」前缀和预印本标记
-        defaultTitle: f.name
-          .replace(/\.[^.]+$/, "")
-          .replace(" [arXiv preprint]", "")
-          .replace(/^(Paper|Citing) - /, ""),
+        // 一键下载的论文用完整的论文标题（文件名里的是截短、去掉了标点的）；其他文件用文件名
+        defaultTitle:
+          f.title ??
+          f.name
+            .replace(/\.[^.]+$/, "")
+            .replace(" [arXiv preprint]", "")
+            .replace(/^(Paper|Citing) - /, ""),
         defaultRole: "exhibit",
         defaultOn: true,
         weight: 3,
@@ -81,7 +128,7 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
           f.type === "application/pdf" ? "pdf"
           : f.type === "image/png" ? "png"
           : f.type === "image/jpeg" ? "jpg"
-          : f.type === "text/plain" ? "markdown"
+          : f.type === "text/plain" ? (/\.(md|markdown)$/i.test(f.name) ? "markdown" : "text")
           : null,
       }),
     ),
@@ -97,7 +144,8 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
     .map((x) => x.r);
 
   const roleOf = (r: Row) => pack.roles[r.id] ?? r.defaultRole;
-  const titleOf = (r: Row) => pack.titles[r.id] ?? r.defaultTitle;
+  const titleOf = (r: Row) => pack.titles[r.id] ?? r.defaultTitle; // 输入框里显示的
+  const finalTitle = (r: Row) => (pack.titles[r.id] ?? "").trim() || r.defaultTitle; // 印进 PDF 的：清空了就用默认标题
   const includedIn = (p: PackConfig, r: Row) =>
     r.format !== null && !p.skip.includes(r.id) && (r.defaultOn || (p.keep ?? []).includes(r.id));
   const included = (r: Row) => includedIn(pack, r);
@@ -120,21 +168,22 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
     setResult(null);
     try {
       const items: PacketItem[] = [];
-      const missing: string[] = [];
       for (const r of rows) {
         if (!included(r)) continue;
-        const base = { role: roleOf(r), title: titleOf(r) };
+        const base = { role: roleOf(r), title: finalTitle(r) };
         if (r.doc) {
           items.push({ ...base, format: "markdown", text: r.doc.content });
           continue;
         }
         const data = await getFile(r.id);
         if (!data) {
-          missing.push(`「${titleOf(r)}」的文件内容找不到了，请重新上传`);
+          // 文件内容找不到了：位置和编号照样留着（Exhibit 保留分隔页），由打包那一步给出提示
+          items.push({ ...base, format: "missing" });
           continue;
         }
         const bytes = b64ToBytes(data);
-        if (r.format === "markdown") items.push({ ...base, format: "markdown", text: new TextDecoder().decode(bytes) });
+        if (r.format === "markdown" || r.format === "text") items.push({ ...base, format: r.format, text: new TextDecoder().decode(bytes) });
+        else if (r.format === "jpg") items.push({ ...base, format: "jpg", data: await uprightJpeg(bytes) });
         else items.push({ ...base, format: r.format!, data: bytes });
       }
       if (!items.length) throw new Error("没有可以打包的内容。");
@@ -145,7 +194,8 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
       a.download = `${[c.type.replace("-", ""), ...petitioner.trim().split(/\s+/)].filter(Boolean).join("_")}.pdf`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setResult({ pages: out.pages, warnings: [...missing, ...out.warnings] });
+      setResult({ pages: out.pages, warnings: out.warnings });
+      patchCase((x) => ({ ...x, packedAt: Date.now() })); // 申请向导据此把「打包下载」这一步标为做过
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -178,6 +228,7 @@ export default function Packer({ c, docs, petitioner, patchCase }: Props) {
         <input
           className="pack-title"
           value={titleOf(r)}
+          placeholder={r.defaultTitle}
           aria-label="在目录中显示的标题"
           onChange={(e) => setPack((p) => ({ ...p, titles: { ...p.titles, [r.id]: e.target.value } }))}
         />

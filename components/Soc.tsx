@@ -1,6 +1,6 @@
 "use client";
 
-import { emptySoc } from "@/lib/profile";
+import { emptySoc, reviewTotal } from "@/lib/profile";
 import type { Profile as ProfileData, Soc as SocData, SocProject, SocReview } from "@/lib/profile";
 import { uid } from "@/lib/types";
 import { CET, CET_SOURCE } from "@/lib/cet";
@@ -23,7 +23,7 @@ export default function Soc({ profile: p, setProfile, only = null }: Props) {
     set({ projects: soc.projects.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
   const setReview = (id: string, patch: Partial<SocReview>) =>
     set({ reviews: soc.reviews.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
-  const totalReviews = soc.reviews.reduce((n, r) => n + (Number(r.count) || 0), 0);
+  const totalReviews = reviewTotal(soc);
 
   return (
     <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount } from "@/lib/account";
 
 /** 设置或修改登录密码（可选；不设就一直用邮箱验证码登录） */
@@ -79,6 +79,16 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [method, setMethod] = useState<"alipay" | "stripe" | null>(null);
+  // 去了支付页面又点浏览器的后退回来时，页面是原样恢复的：把「正在跳转」的状态清掉，并重新读一次余额
+  useEffect(() => {
+    const back = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setBusy("");
+      refresh();
+    };
+    window.addEventListener("pageshow", back);
+    return () => window.removeEventListener("pageshow", back);
+  }, [refresh]);
 
   if (!me?.user) {
     return (
