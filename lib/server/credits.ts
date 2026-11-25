@@ -14,7 +14,10 @@ export const CITEMAP_COST = 30; // 生成引用地图
 export const NOTABLE_MIN_BALANCE = 100; // 做一次重要引用分析至少要有这么多余额（实际按用量扣）
 // 重要引用分析单独用低一些的倍数：一篇论文封顶约 230 credit
 export const NOTABLE_MARKUP = envNumber("NOTABLE_MARKUP", 25) || 25;
-const MARKUP = envNumber("CREDIT_MARKUP", 40) || 40; // 成本之上的加价倍数
+const MARKUP = envNumber("CREDIT_MARKUP", 40) || 40; // 成本之上的加价倍数（文档工作区里写文书、改文书用这个）
+// 主聊天（提问、填档案）用低得多的倍数，用来吸引人试用：这部分消息多、每条成本很低，按 40 倍算的话入门的 5 美元只够问十来句。
+// 收入主要来自后面写案件（文档工作区），那里保持上面的倍数
+export const CHAT_MARKUP = envNumber("CHAT_MARKUP", 10) || 10;
 
 /** 读一个数字配置；没设或写错了用默认值。0 是有效的值 */
 export function envNumber(name: string, fallback: number): number {

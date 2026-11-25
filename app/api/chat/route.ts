@@ -3,7 +3,7 @@ import type { ApiMessage } from "@/lib/types";
 import { streamViaClaudeCli } from "@/lib/claudeCli";
 import { getUser } from "@/lib/server/auth";
 import { readJson, TooLarge } from "@/lib/server/body";
-import { addCredits, chatCost, textTokens } from "@/lib/server/credits";
+import { addCredits, CHAT_MARKUP, chatCost, textTokens } from "@/lib/server/credits";
 import type { Usage } from "@/lib/server/credits";
 import { busy, hold } from "@/lib/server/limits";
 import { llmPrice, llmProvider } from "@/lib/server/llm";
@@ -282,7 +282,8 @@ export async function POST(req: Request) {
       usage = { cache_read_input_tokens: estimateInput(system, messages), output_tokens: info.outTokens };
       produced = true;
     }
-    if (produced) addCredits(user.id, -chatCost(usage, price), "聊天");
+    // 主聊天按较低的倍数算；文档工作区里的对话（起草、修改文书）保持原来的倍数
+    if (produced) addCredits(user.id, -(doc ? chatCost(usage, price) : chatCost(usage, price, CHAT_MARKUP)), "聊天");
   };
 
   const headers = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
