@@ -147,7 +147,71 @@ with sync_playwright() as p:
     page.locator(".action-card.applied", has=page.locator("strong", has_text="存进案件")).get_by_role("button", name="去看填好的页面 →").click()
     check("actions: 'go see' opens that case's files tab", page.locator("h2", has_text="Battery NIW").count() == 1 and page.locator(".tabs button.on").inner_text().startswith("文件") and page.locator(".file-list li").count() == 1)
 
+    # ---------- 4b. 按编号填项目、删掉填错的、撤销、给会话改名、带用户去做不了的事 ----------
+    def projects():
+        return json.loads(LS(page, 'pathway.profile')).get("soc", {}).get("projects", [])
+    nav(page, "我的档案")
+    page.locator(".profile-tabs button", has_text="贡献总结").click()
+    start = len(projects())
+    page.get_by_role("button", name="+ 添加项目").click()
+    blank = projects()[-1]
+    check("setup: an empty project was added on the page", len(projects()) == start + 1 and blank["title"] == "")
+    n = start + 1  # 空着的那个是页面上的「项目 n」
+    nav(page, "聊天")
+    page.get_by_role("button", name="+ 新建会话").click()
+    send(page, f"帮我填写贡献总结里的项目 {n}，不用再问我别的，内容如下。\n"
+               f"Project {n}\n1. Title of Project: Early-Cycle Battery Lifetime Prediction\n2. Dates: 08/2023 – Ongoing\n"
+               "3. Project Output: BattLife open-source software, about 12,000 downloads.\n"
+               "5. Summary of the Work: I designed a model that predicts the lifetime of lithium-ion batteries from the first 100 test cycles, and released it as open-source software.")
+    wait_reply(page)
+    card = page.locator(".msg.assistant").last.locator(".action-card", has=page.locator("strong", has_text="贡献总结")).first
+    txt = card.inner_text() if card.count() else page.locator(".msg.assistant").last.inner_text()
+    print("  project card:", txt[:200].replace("\n", " | "))
+    check("project: the model targets the numbered (empty) project, not a new one", card.count() == 1 and f"项目 {n}" in txt and f"会成为项目 {n + 1}" not in txt, txt[:400])
+    card.get_by_role("button", name="应用", exact=True).click()
+    page.locator(".msg.assistant").last.locator(".action-card.applied").first.wait_for()
+    ps = projects()
+    check("project: the content is in that project and no extra project appeared", len(ps) == start + 1 and ps[-1]["id"] == blank["id"] and "Battery Lifetime" in ps[-1]["title"] and "100" in ps[-1]["summary"], ps[-1])
+
+    send(page, f"再加一个新项目，名称 Test Project Two，工作概述写：I built a public benchmark for battery data. 另外把项目 {n} 的经费来源写成 DOE Grant DE-XX-0000000。直接出卡片。")
+    wait_reply(page)
+    if page.get_by_role("button", name="全部应用").count():
+        page.get_by_role("button", name="全部应用").click()
+    else:
+        page.locator(".action-card.pending").last.get_by_role("button", name="应用", exact=True).click()
+    page.locator(".action-card.pending").wait_for(state="detached", timeout=15000)
+    ps = projects()
+    check("project: a second project is added and the first one edited by its number", len(ps) == start + 2 and ps[-1]["title"] == "Test Project Two" and "DE-XX-0000000" in ps[-2]["funding"], [(x["title"], x["funding"]) for x in ps])
+
+    send(page, f"项目 {n + 1} 加错了，把它删掉。另外把这个会话的标题改成「贡献总结整理」。")
+    wait_reply(page)
+    titles = [c.locator(".action-head strong").inner_text() for c in page.locator(".msg.assistant").last.locator(".action-card").all()]
+    print("  cards:", titles)
+    rm = page.locator(".msg.assistant").last.locator(".action-card", has=page.locator("strong", has_text="贡献总结")).first
+    check("delete: removing a project is shown as a deletion of that numbered project", rm.count() == 1 and rm.locator(".action-row.danger").count() >= 1 and f"删除项目 {n + 1}" in rm.inner_text(), rm.inner_text()[:300] if rm.count() else titles)
+    check("chat: a rename card for this conversation is proposed", any("会话改名" in t for t in titles), titles)
+    page.get_by_role("button", name="全部应用").click()
+    page.locator(".action-card.pending").wait_for(state="detached", timeout=15000)
+    ps = projects()
+    check("delete: the stray project is gone, the right one is untouched", len(ps) == start + 1 and "Battery Lifetime" in ps[-1]["title"], [x["title"] for x in ps])
+    check("chat: the conversation is renamed in the history list", page.locator(".history-item.on .history-title").inner_text() == "贡献总结整理", page.locator(".history-title").all_inner_texts())
+    rm.get_by_role("button", name="撤销").click()
+    time.sleep(0.5)
+    ps = projects()
+    check("undo: the deleted project comes back in its place", len(ps) == start + 2 and ps[-1]["title"] == "Test Project Two", [x["title"] for x in ps])
+
+    send(page, "我想获取我的学术数据和引用，在这里能直接做吗？")
+    wait_reply(page)
+    goc = page.locator(".msg.assistant").last.locator(".action-card", has=page.get_by_role("button", name="打开 →"))
+    check("go: for something it cannot do itself, the model offers to take the user there", goc.count() >= 1 and "学术记录" in goc.first.inner_text(), page.locator(".msg.assistant").last.inner_text()[:300])
+    if goc.count():
+        goc.first.get_by_role("button", name="打开 →").click()
+        check("go: the button lands on the scholar tab", page.locator(".profile-tabs button.on", has_text="学术记录与引用").count() == 1)
+        nav(page, "聊天")
+
     # ---------- 5. 文档工作区：让 AI 把拟从事事业写成正式陈述 ----------
+    nav(page, "案件")
+    page.locator(".case-card", has_text="Battery NIW").click()
     page.locator(".tabs button", has_text="申请向导").click()
     est = page.locator(".guide li.step", has_text="确定拟从事事业")
     est.get_by_role("button", name="生成「Proposed Endeavor 陈述」文档").click()
@@ -185,15 +249,15 @@ with sync_playwright() as p:
     # ---------- 6. 会话管理 ----------
     nav(page, "聊天")
     n = page.locator(".history-item").count()
-    check("chat: three conversations in history", n == 3, page.locator(".history-title").all_inner_texts())
+    check("chat: four conversations in history", n == 4, page.locator(".history-title").all_inner_texts())
     page.locator(".history-title").last.click()
     check("chat: switching shows that conversation's messages", "NIW 的三项要求" in page.locator(".msg.user .bubble").first.inner_text())
     page.once("dialog", lambda d: d.dismiss())
     page.locator(".history-del").last.click()
-    check("chat: delete cancelled keeps it", page.locator(".history-item").count() == 3)
+    check("chat: delete cancelled keeps it", page.locator(".history-item").count() == 4)
     page.once("dialog", lambda d: d.accept())
     page.locator(".history-del").last.click()
-    check("chat: delete removes it and clears the view", page.locator(".history-item").count() == 2 and page.locator(".msg").count() == 0)
+    check("chat: delete removes it and clears the view", page.locator(".history-item").count() == 3 and page.locator(".msg").count() == 0)
 
     # ---------- 7. 余额用完 ----------
     db("update users set credits=0 where email=?", (email,))
@@ -205,6 +269,6 @@ with sync_playwright() as p:
     # 同步上去的内容里不应该出现原始标签
     time.sleep(3)
     conv = db("select value from user_data d join users u on u.id=d.user_id where u.email=? and key='conversations'", (email,))
-    check("sync: conversations saved to the server", conv and len(json.loads(conv[0][0])) == 2)
+    check("sync: conversations saved to the server", conv and len(json.loads(conv[0][0])) == 3)
     b.close()
 finish()

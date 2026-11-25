@@ -11,16 +11,8 @@ import { fileIds } from "@/lib/sync";
 import { workflowById } from "@/lib/skills";
 import type { Workflow } from "@/lib/skills";
 import type { Conversation, DocFile } from "@/lib/types";
+import { DOC_KINDS } from "@/lib/docKinds";
 
-export const DOC_KINDS = [
-  { kind: "Petition Letter", desc: "申请信，整个案件的核心论证" },
-  { kind: "推荐信", desc: "Recommendation Letter 草稿" },
-  { kind: "Proposed Endeavor 陈述", desc: "NIW 拟从事事业的说明；「我的档案」里填了拟从事事业的话，会用它自动生成" },
-  { kind: "Summary of Contributions", desc: "用「我的档案」里的贡献总结自动生成，写申请信和推荐信时引用它" },
-  { kind: "论文与引用记录", desc: "用「我的档案」里获取的学术数据自动生成" },
-  { kind: "重要引用", desc: "用「我的档案」里的重要引用分析自动生成，写 Petition Letter 时引用它" },
-  { kind: "其他文档", desc: "RFE 回复、个人陈述等" },
-];
 
 // 这些工作流一开始就自动引用案件里的全部文件
 const AUTO_CITE = new Set([

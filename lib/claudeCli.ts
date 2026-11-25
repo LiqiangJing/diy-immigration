@@ -85,6 +85,7 @@ export function streamViaClaudeCli(opts: {
         send(`${NOTICE}\n\n> ⚠️ ${msg}`);
       };
 
+      let missing = 0; // 找不到 claude 命令的次数
       const run = (attempt: number) => {
         const child = spawn(process.env.CLAUDE_CLI_PATH || "claude", args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
         current = child;
@@ -133,6 +134,13 @@ export function streamViaClaudeCli(opts: {
         });
         child.on("error", (err) => {
           if (abandoned) return;
+          // 本机的 claude 命令自动更新的那一两秒里会找不到：等一下再试，最多试五次
+          if ((err as NodeJS.ErrnoException).code === "ENOENT" && missing < 5 && !gotText && !opts.signal.aborted) {
+            missing++;
+            abandoned = true;
+            setTimeout(() => run(attempt), 2000);
+            return;
+          }
           fail(`无法启动 claude 命令（${err.message}）。请确认已安装并登录 Claude Code，或改为配置 ANTHROPIC_API_KEY。`);
           close();
         });

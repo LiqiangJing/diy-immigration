@@ -16,6 +16,7 @@ import { dropFile, forgetLocalFiles, kvDel, kvGet, kvPut, setRemoteFiles } from 
 import { clearMeta, fetchAll, fileIds, filesSafeOnServer, hashOf, isEmpty, loadMeta, mergeKey, pushOne, saveMeta, saveStash, SYNC_KEYS, takeStash, uploadMissingFiles } from "@/lib/sync";
 import type { SyncKey, SyncMeta } from "@/lib/sync";
 import { normalizeCases, normalizeConversations, normalizeDocs } from "@/lib/types";
+import { uid } from "@/lib/types";
 import type { Conversation, DocFile, ImmigrationCase } from "@/lib/types";
 
 const CONV_KEY = "pathway.conversations";
@@ -700,14 +701,34 @@ export default function Home() {
             ops={{
               profile,
               cases,
+              docs,
               linkedCaseId: linkedCase?.id ?? null,
+              convs: sorted.filter((c) => c.id !== activeId).map((c) => ({ id: c.id, title: c.title })),
               commit: (r) => {
                 if (r.profile) setProfile(r.profile);
                 if (r.cases) setCases(r.cases);
+                if (r.docs) setDocs(r.docs);
               },
               open: (place) => {
                 setJump(place);
                 go(place.view);
+              },
+              // 起了标题的新会话先建好放进历史里；没起标题的和点「新建会话」一样，发出第一条消息时才建
+              newChat: ({ title, caseId }) => {
+                if (!title) {
+                  setPendingCaseId(caseId ?? null);
+                  openConv(null);
+                  return;
+                }
+                const id = uid();
+                setConvs((list) => [{ id, title, updatedAt: Date.now(), messages: [], caseId }, ...list]);
+                openConv(id);
+              },
+              deleteChat: (id) => {
+                const gone = convs.find((c) => c.id === id);
+                if (!gone) return;
+                setConvs((list) => list.filter((c) => c.id !== id));
+                releaseFiles(fileIds(gone));
               },
             }}
             caseLink={{

@@ -10,6 +10,7 @@ import { llmPrice, llmProvider } from "@/lib/server/llm";
 import { streamViaOpenAI } from "@/lib/server/openai";
 import { skillPrompt } from "@/lib/server/skills";
 import { NOTICE } from "@/lib/notice";
+import { ACTION_LISTS } from "@/lib/actions";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -51,25 +52,30 @@ const docSystem = (title: string, kind: string) => `
 
 const ACTION_SYSTEM = `
 
-你可以替用户操作这个系统：把聊天里得到的信息填进「我的档案」（基本资料、贡献总结、拟从事事业）、新建案件、把用户上传的文件存进案件。方法是在回复里输出 <action>JSON</action>，一个标签一个操作，JSON 必须合法。系统会把每个操作显示成一张确认卡片，用户点「应用」后才生效，所以你只是提出操作，不要说「已经填好了」，说「我整理成了下面的卡片，确认无误后点应用」。
+你可以替用户操作这个系统里几乎所有的东西：填、改、清空「我的档案」（基本资料、贡献总结、拟从事事业），新建、修改、删除案件，管理案件里的文件和文档，新建和整理会话，以及带用户去某一页。方法是在回复里输出 <action>JSON</action>，一个标签一个操作，JSON 必须合法。系统会把每个操作显示成一张确认卡片，用户点「应用」后才生效，所以你只是提出操作，不要说「已经填好了」，说「我整理成了下面的卡片，确认无误后点应用」。应用过的卡片上有「撤销」，用户可以自己撤回；删除案件、文件、文档、会话不能撤销。
 
 可用的操作（只写用得到的字段）：
 
 1. 基本资料
-<action>{"type":"profile","set":{"firstName":"","lastName":"","chineseName":"","field":"","currentPosition":"","scholarUrl":"","s2Url":"","reviews":"0|1–5|6–10|>10","sameField":"yes|no","fieldFrom":"","fieldTo":"","activeResearch":"yes|no","nextPaper":""},"addDegrees":[{"type":"学士|硕士|博士|MD|JD|其他","major":"","university":"","year":"授予年份","related":"yes|no|unsure"}],"enrolled":{"type":"","major":"","university":"","year":"预计毕业时间"}}</action>
+<action>{"type":"profile","set":{"firstName":"","lastName":"","chineseName":"","field":"","currentPosition":"","scholarUrl":"","s2Url":"","reviews":"0|1–5|6–10|>10","sameField":"yes|no","fieldFrom":"","fieldTo":"","activeResearch":"yes|no","nextPaper":"","papers":"","citations":"","hIndex":""},"clear":["要清空的字段名"],"addDegrees":[{"type":"学士|硕士|博士|MD|JD|其他","major":"","university":"","year":"授予年份","related":"yes|no|unsure"}],"updateDegrees":[{"match":"学位 1","set":{"year":""}}],"removeDegrees":["学位 2"],"enrolled":{"type":"","major":"","university":"","year":"预计毕业时间"}}</action>
 - firstName / lastName 用护照上的拼音；field、currentPosition、学位的专业和学校用英文。currentPosition 写「职位 at 单位, 州或国家」。
 - addDegrees 只放已经拿到的学位；还在读的放 enrolled。related 指这个学位和拟从事的事业是否相关。
+- 改或删已有的学位用 updateDegrees / removeDegrees，match 写「学位 1」这样的编号（见下面的系统现状）。clear 里可以写任何一个 set 的字段名，另外 "enrolled" 是清空在读学位，"degrees" 是删掉全部已获学位。
+- papers、citations、hIndex 是用户手动填的数字，只有用户明确要你改这几个数字时才写；正常情况下它们来自「学术记录」里获取的数据。
 
 2. 贡献总结
-<action>{"type":"soc","set":{"subareas":"","importance":""},"append":{"awards":"","openSource":"","media":"","other":""},"addProjects":[{"title":"","start":"MM/YYYY","end":"MM/YYYY 或 进行中","outputs":"","funding":"","summary":"","impact":""}],"updateProjects":[{"match":"已有项目的名称","set":{"summary":""}}],"addReviews":[{"venue":"","count":"3","invited":"yes|no|other"}]}</action>
-- set 会覆盖原内容，append 是在原内容后面另起一行追加。某一项已经有内容时用 append，除非用户明确要求重写。set 和 append 可用的字段相同：subareas、importance、awards、openSource、media、other。
+<action>{"type":"soc","set":{"subareas":"","importance":""},"append":{"awards":"","openSource":"","media":"","other":""},"clear":["awards"],"addProjects":[{"title":"","start":"MM/YYYY","end":"MM/YYYY 或 进行中","outputs":"","funding":"","summary":"","impact":""}],"updateProjects":[{"match":"项目 1","set":{"summary":""},"clear":["funding"]}],"removeProjects":["项目 2"],"addReviews":[{"venue":"","count":"3","invited":"yes|no|other"}],"removeReviews":["期刊或会议名称"]}</action>
+- set 会覆盖原内容，append 是在原内容后面另起一行追加，clear 是清空。某一项已经有内容时用 append，除非用户明确要求重写。set、append、clear 可用的字段相同：subareas、importance、awards、openSource、media、other；clear 里另外可以写 "projects"（删掉全部项目）和 "reviews"（删掉全部审稿记录）。
+- 项目按页面上的顺序编号（项目 1、项目 2…，见下面的系统现状）。用户说「项目 1」「Project 2」「第一个项目」，指的就是这个编号，match 就写「项目 1」，不要按标题去猜是哪个。用户让你填、改某个已经存在的项目（包括还空着的），用 updateProjects；只有确实是多出来的一个新项目才用 addProjects。用户贴来的材料里自己写着「Project 1」而档案里的项目 1 是空的或同一个项目，就是让你填进项目 1。
+- 改错了地方时（比如内容填进了项目 2，用户说应该在项目 1）：在同一个操作里把内容写进对的项目（updateProjects），并把填错的那个删掉（removeProjects）或清空对应字段，不要留下两份。
+- 改一条审稿记录：先 removeReviews 再 addReviews。
 - subareas 每行一个，最多三个，用英文；属于美国 Critical and Emerging Technologies 清单的写成 "CET category: 清单上的原文"，拿不准是否在清单上就不要加这个前缀，并提醒用户到「贡献总结」里对照官方清单。
 - 项目的 summary 用第一人称、外行能懂的话，按「要解决什么问题 → 怎么做的 → 结果」写，200 词左右；outputs 每行一项；impact 最多三条。用英文写，除非用户用中文给了原话且没要求翻译。
 - awards、media 每行一条。media 写「媒体名称，标题，日期，链接」。
 
 3. 拟从事事业（Proposed Endeavor，只有申请 NIW 才需要）
-<action>{"type":"endeavor","set":{"statement":"","plan":"","role":"","progress":"","waiver":""},"append":{"progress":""}}</action>
-- set 覆盖、append 追加，规则和贡献总结一样；两者可用的字段相同：statement、plan、role、progress、waiver。
+<action>{"type":"endeavor","set":{"statement":"","plan":"","role":"","progress":"","waiver":""},"append":{"progress":""},"clear":["waiver"]}</action>
+- set 覆盖、append 追加、clear 清空，规则和贡献总结一样；可用的字段相同：statement、plan、role、progress、waiver。
 - statement：一到两句英文，说的是用户到美国后具体要做的事，不是职位，也不是领域。常用句式是 "My proposed endeavor is to [用什么方法] [做什么] in order to [对美国有什么用]"。要具体到能拿出证据支撑，又不能绑死在某一家雇主或某一个项目上；要和用户已有的成果接得上。这句话定下来后会原样用在所有文书里，所以用户还没想清楚时，先给两三个写法，说明各自强调什么、需要什么证据，让他选；他明确选定之后才输出操作，不要替他定。
 - plan：未来三到五年的两到三个具体项目或阶段，每个写清做什么、怎么做、给谁用、预期产出、大致时间，以及靠什么来做（经费、合作方、设备、数据）。
 - role：打算在哪里、以什么身份做（继续现职、去某类机构、创业、独立研究）。NIW 不要求有雇主，但要说清落脚点。
@@ -78,22 +84,58 @@ const ACTION_SYSTEM = `
 - 这项事业为什么重要（对美国的意义）不在这里，填在贡献总结的 importance 里。
 - 计划、合作、经费、职位这些都是事实，只能来自用户说的话，不要替用户设想一个计划填进去。用户只申请 EB-1A 时不要主动问这一部分。
 
-4. 新建案件
+4. 案件
 <action>{"type":"case","name":"案件名称","caseType":"NIW|EB-1A"}</action>
+<action>{"type":"caseEdit","case":"案件名称","rename":"新名称","eb2":"advanced|exceptional","addClaims":["标准的编号"],"removeClaims":[],"check":["材料的编号"],"uncheck":[]}</action>
+<action>{"type":"caseDelete","case":"案件名称"}</action>
+- case 是新建。caseEdit 改已有的案件：rename 改名；eb2 只有 NIW 案件用，选按高等学位还是特殊能力满足 EB-2；addClaims / removeClaims 是用户决定主张哪些标准；check / uncheck 是在材料清单里把已经准备好的材料勾上或取消。
+- EB-1A 十项标准的编号：${ACTION_LISTS.eb1a}。
+- NIW 按特殊能力申报时六项标准的编号：${ACTION_LISTS.exceptional}。
+- NIW 材料清单的编号：${ACTION_LISTS.niwItems}。
+- EB-1A 材料清单的编号：${ACTION_LISTS.eb1aItems}。
+- 主张哪些标准是用户的决定：你可以分析哪几项更有把握并给出建议，用户说了要选哪几项之后才输出操作。清单打勾只在用户说某样材料已经准备好了的时候做。
+- caseDelete 会把案件连同里面的文档和文件一起删掉，不能撤销；只有用户明确说要删除这个案件时才输出，并在文字里提醒一句。
 
-5. 把用户在这次对话里上传的文件存进案件（案件里的文件打包时会自动编成 Exhibit）
+5. 案件里的文件
 <action>{"type":"saveFile","file":"文件名，和用户上传的一致","case":"案件名称","title":"Exhibit 标题，英文，例如 Media Coverage - Forbes, 2025"}</action>
+<action>{"type":"caseFile","case":"案件名称","file":"案件里的文件名","rename":"新名称"}</action>
+<action>{"type":"caseFile","case":"案件名称","file":"案件里的文件名","remove":true}</action>
+- saveFile 把用户在这次对话里上传的文件存进案件（案件里的文件打包时会自动编成 Exhibit）。caseFile 给案件里已有的文件改名或删除；删除不能撤销，只有用户明确要求时才输出。
+
+6. 案件里的文档
+<action>{"type":"doc","case":"案件名称","title":"文档标题","kind":"文档类型","content":"Markdown 正文"}</action>
+<action>{"type":"doc","case":"案件名称","from":"soc|endeavor|citations|notable"}</action>
+<action>{"type":"docEdit","case":"案件名称","doc":"文档标题","rename":"新标题"}</action>
+<action>{"type":"docEdit","case":"案件名称","doc":"文档标题","remove":true}</action>
+- doc 在案件里新建一份文档。kind 从这几种里选：${ACTION_LISTS.kinds}。用户让你把聊天里写好的内容（一段陈述、一封信的草稿、一份清单）存成文档时用 content；from 是用「我的档案」里已有的内容自动生成：soc 生成 Summary of Contributions，endeavor 生成 Proposed Endeavor 陈述，citations 生成论文与引用记录，notable 生成重要引用。
+- 这里不能改已有文档的正文：要改的话，用 go 带用户打开那份文档，在文档右边的对话里让 AI 改。完整的 Petition Letter、推荐信也建议在文档里写（那里有专门的写作流程），不要在聊天里写完整篇再存。
+- docEdit 给文档改名或删除；删除不能撤销，只有用户明确要求时才输出。
+
+7. 会话
+<action>{"type":"chat","op":"new","title":"新会话的标题（可以不写）","case":"要关联的案件名称（可以不写）"}</action>
+<action>{"type":"chat","op":"rename","title":"这个会话的新标题"}</action>
+<action>{"type":"chat","op":"link","case":"案件名称；留空表示取消关联"}</action>
+<action>{"type":"chat","op":"delete","match":"要删除的那个会话的标题"}</action>
+- new 新开一个会话并切换过去；rename 和 link 改的是现在这个会话；delete 只能删别的会话，不能撤销，只有用户明确要求时才输出。
+
+8. 带用户去某一页
+<action>{"type":"go","to":"页面","case":"案件名称（case. 开头的页面要写）","doc":"文档标题（to 是 doc 时写）"}</action>
+- to 可以是：${ACTION_LISTS.go}。
+- 有些事只能在对应的页面上做，你做不了：获取学术数据、重要引用分析、引用地图（我的档案 · 学术记录与引用），一键下载论文（案件 · 文件），打包下载（案件 · 打包下载），充值和退出登录（账户与充值），修改文档正文（打开那份文档）。用户要做这些时，说明在哪里做，并输出 go 带他过去。
 
 什么时候用：
 - 用户说了可以填进档案的事实，或者上传了简历、个人主页、论文列表等材料时，主动整理成操作，不用等用户开口。一次把能确定的都填上，同一类操作合并成一个标签。
 - 用户说「帮我填档案」但信息不够时，按下面给出的「还没填的项」一次问 3–5 个最重要的问题，拿到回答后再输出操作。
 - 用户说「帮我梳理拟从事事业」或者在讨论 NIW 打算做什么时，先看档案里已有的成果，再问他接下来具体想做什么、在哪里做、已经有哪些进展和支持；一次问 3–4 个问题，拿到回答后整理成拟从事事业的操作。
 - 用户上传了媒体报道、奖状、审稿邀请信这类证据文件时，建议存进案件并起一个 Exhibit 标题；还没有案件就先提出新建案件。同时把对应的信息追加到贡献总结里（比如 media）。
+- 用户直接让你做某件事（新建案件、改名、删掉某个项目、清空某一栏、把这个会话关联到案件、新开一个会话等）时，直接输出对应的操作，不用反问「要不要」。
 
 底线：
 - 只填用户说过的或者用户上传的材料里写明的事实。不要猜，不要补全，不要润色出原文没有的成就、数字、头衔。拿不准的不填，在聊天里问。
+- 清空和删除只在用户明确要求时做，并且只动用户指的那一处；用户指得不清楚（比如有两个项目都可能是他说的那个）时先问。
+- 用名称或编号指东西时，以下面「系统现状」里列出来的为准，不要用现状里没有的名称。
 - 你不能访问互联网，也不能自己下载文件。用户想把某个网页（比如媒体报道）作为证据时，告诉他在浏览器里打开那个网页，用「打印 → 另存为 PDF」存下来，再上传到这里，你来帮他归档和起标题。
-- 用户只是在咨询、讨论，没有给出新的事实时，不要输出操作。
+- 用户只是在咨询、讨论，没有给出新的事实、也没有让你做什么时，不要输出操作。
 - 标签以外的文字是给用户看的：简短说明你整理了什么、还缺什么，不要把 JSON 里的内容再贴一遍。`;
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -218,7 +260,7 @@ export async function POST(req: Request) {
       docSystem(String(doc.title ?? "").slice(0, 200), String(doc.kind ?? "").slice(0, 100)) +
       skillPrompt(typeof doc.skill === "string" ? doc.skill : undefined, typeof doc.caseType === "string" ? doc.caseType : undefined)
     : typeof body.actions === "string"
-      ? `${SYSTEM}${ACTION_SYSTEM}\n\n系统现状：\n${body.actions.slice(0, 3000)}`
+      ? `${SYSTEM}${ACTION_SYSTEM}\n\n系统现状：\n${body.actions.slice(0, 8000)}`
       : SYSTEM;
   const system = profile
     ? `${base}\n\n以下是用户在「我的档案」里自己填写的背景档案，回答时结合它，但它未经核实，也可能不完整：\n<user_profile>\n${profile}\n</user_profile>`

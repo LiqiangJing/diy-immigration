@@ -253,7 +253,8 @@ export function fileIds(...values: unknown[]): string[] {
     else if (x && typeof x === "object") {
       const o = x as Record<string, unknown>;
       if (typeof o.id === "string" && typeof o.name === "string" && typeof o.size === "number" && typeof o.type === "string") ids.add(o.id);
-      Object.values(o).forEach(walk);
+      // 聊天卡片的撤销记录里也有文件的信息，但那只是「当时加了哪一项」的记录，不算还在用这个文件
+      for (const k of Object.keys(o)) if (k !== "undo") walk(o[k]);
     }
   };
   values.forEach(walk);

@@ -444,6 +444,11 @@ button:disabled { cursor: not-allowed; }
 .action-row > div { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
 .action-row small { display: block; color: var(--danger); margin-top: 4px; font-size: 12.5px; }
 .action-card .form-actions { margin-top: 10px; }
+.action-card.danger.pending { border-color: var(--danger); }
+.action-row.danger > span, .action-row.danger > div { color: var(--danger); }
+.action-note { color: var(--muted); font-size: 13px; padding: 6px 4px 2px; }
+.action-head .link.undo { color: var(--muted); }
+.btn-accent.danger { background: var(--danger); }
 @media (max-width: 640px) { .action-row { grid-template-columns: 1fr; gap: 2px; } }
 
 /* 贡献总结、拟从事事业：每一项的详细填写说明。类名不能叫 guide，那是案件「申请向导」用的 */

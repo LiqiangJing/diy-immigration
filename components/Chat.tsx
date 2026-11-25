@@ -8,20 +8,29 @@ import type { ApiMessage, Attachment, ChatMessage, Conversation } from "@/lib/ty
 import { ACCEPT, fmtSize, getFile, putFile, saveUploads, textToBase64 } from "@/lib/files";
 import { useAccount } from "@/lib/account";
 import { applyEdits, liveWrite, parseEdits, stripDocBlocks } from "@/lib/docEdits";
-import { apply, describe, placeOf, readActions, stripActions, worldText } from "@/lib/actions";
+import { apply, describe, irreversible, placeOf, readActions, stripActions, worldText } from "@/lib/actions";
+import { diff, revert } from "@/lib/undo";
 import { splitNotice } from "@/lib/notice";
 import type { ActionItem, Place, World } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
-import type { ImmigrationCase } from "@/lib/types";
+import type { DocFile, ImmigrationCase } from "@/lib/types";
 
-/** 让聊天可以替用户操作系统（填档案、建案件、存文件）；每个操作都要用户确认 */
+/** 让聊天可以替用户操作系统（改档案、案件、文档、会话）；每个操作都要用户确认 */
 export type Ops = {
   profile: Profile;
   cases: ImmigrationCase[];
+  docs: DocFile[];
   linkedCaseId: string | null;
-  commit: (r: { profile?: Profile; cases?: ImmigrationCase[] }) => void;
+  convs: { id: string; title: string }[]; // 除了现在这个之外的会话
+  commit: (r: { profile?: Profile; cases?: ImmigrationCase[]; docs?: DocFile[] }) => void;
   open: (place: Place) => void; // 跳到被修改的那一页
+  newChat: (o: { title: string; caseId?: string }) => void;
+  deleteChat: (id: string) => void;
 };
+
+/** 应用之后卡片上留的内容：太长的截短，免得每条会话里都存一大份 */
+const brief = (rows: { label: string; value: string; danger?: boolean }[]) =>
+  rows.map((r) => ({ label: r.label, value: r.value.length > 1500 ? `${r.value.slice(0, 1500)}…` : r.value, danger: r.danger }));
 
 /** 在文档工作区里使用时，Chat 通过它读写左侧的文档 */
 export type DocContext = {
@@ -103,7 +112,10 @@ export default function Chat({
       ? {
           profile: ops.profile,
           cases: ops.cases,
+          docs: ops.docs,
           linkedCaseId: ops.linkedCaseId,
+          conv: conv ? { id: conv.id, title: conv.title, caseId: conv.caseId } : null,
+          convs: ops.convs,
           attachments: allAttachments(list),
           creating: (msg?.actions ?? []).flatMap((x) => (x.status === "pending" && x.action.type === "case" ? [x.action.name] : [])),
         }
@@ -116,11 +128,16 @@ export default function Chat({
     applying.current = true;
     try {
       const w = world(messages, messages.find((m) => m.id === msgId))!;
-      let profileChanged = false;
-      let casesChanged = false;
-      const done: Record<string, Pick<ActionItem, "status" | "note" | "place">> = {};
+      const start = { profile: w.profile, cases: w.cases, docs: w.docs, title: conv.title, caseId: conv.caseId };
+      // 撤销时要对照的那几份数据
+      const snap = () => ({ profile: w.profile, cases: w.cases, docs: w.docs ?? [], conv: { title: w.conv?.title, caseId: w.conv?.caseId } });
+      const release: string[] = [];
+      const effects: NonNullable<ReturnType<typeof apply>["effect"]>[] = [];
+      const done: Record<string, Pick<ActionItem, "status" | "note" | "place" | "undo" | "shown">> = {};
       for (const item of messages.find((m) => m.id === msgId)?.actions ?? []) {
-        if (!ids.includes(item.id) || item.status !== "pending") continue;
+        if (!ids.includes(item.id) || item.status !== "pending" || item.action.type === "go") continue;
+        const before = snap();
+        const card = describe(item.action, w);
         const r = apply(item.action, w);
         if (r.error) {
           done[item.id] = { status: "pending", note: r.error };
@@ -134,28 +151,75 @@ export default function Chat({
           }
           await putFile(r.copy.to, data);
         }
-        if (r.profile) {
-          w.profile = r.profile;
-          profileChanged = true;
+        if (r.profile) w.profile = r.profile;
+        if (r.cases) w.cases = r.cases;
+        if (r.docs) w.docs = r.docs;
+        if (r.conv && w.conv) {
+          w.conv = { ...w.conv, title: r.conv.title, caseId: r.conv.caseId };
+          w.linkedCaseId = r.conv.caseId ?? null;
         }
-        if (r.cases) {
-          w.cases = r.cases;
-          casesChanged = true;
-        }
-        // 记下实际改到了哪一页，之后点「去看」不用再按现在的数据重新猜
-        done[item.id] = { status: "applied", place: placeOf(item.action, w) };
+        if (r.release) release.push(...r.release);
+        if (r.effect) effects.push(r.effect);
+        // 记下实际改到了哪一页（之后点「去看」不用再按现在的数据重新猜）和改了哪些地方（撤销用）
+        done[item.id] = {
+          status: "applied",
+          note: undefined,
+          place: r.place ?? placeOf(item.action, w),
+          undo: r.final ? undefined : diff(before, snap()),
+          shown: { title: card.title, rows: brief(card.rows) },
+        };
       }
       // 只提交确实改了的那一份，免得把这期间别处的改动盖掉
-      ops.commit({ profile: profileChanged ? w.profile : undefined, cases: casesChanged ? w.cases : undefined });
+      ops.commit({
+        profile: w.profile !== start.profile ? w.profile : undefined,
+        cases: w.cases !== start.cases ? w.cases : undefined,
+        docs: w.docs !== start.docs ? w.docs : undefined,
+      });
+      const renamed = w.conv && (w.conv.title !== start.title || w.conv.caseId !== start.caseId) ? { title: w.conv.title, caseId: w.conv.caseId } : null;
       patchConv(conv.id, (c) => ({
         ...c,
+        ...(renamed ?? {}),
         messages: c.messages.map((m) =>
           m.id === msgId ? { ...m, actions: m.actions?.map((x) => (done[x.id] ? { ...x, ...done[x.id] } : x)) } : m,
         ),
       }));
+      account.releaseFiles(release);
+      // 新开会话会离开这个聊天框，放在最后
+      for (const e of effects) if ("deleteChat" in e) ops.deleteChat(e.deleteChat);
+      for (const e of effects) if ("newChat" in e) ops.newChat(e.newChat);
     } finally {
       applying.current = false;
     }
+  }
+
+  /** 撤销一张已经应用的卡片：只把还保持着卡片写入内容的地方改回去，之后用户自己又改过的不动 */
+  function undoAction(msgId: string, id: string) {
+    const item = messages.find((m) => m.id === msgId)?.actions?.find((x) => x.id === id);
+    if (!ops || !conv || !item?.undo?.length || applying.current) return;
+    const now = { profile: ops.profile, cases: ops.cases, docs: ops.docs, conv: { title: conv.title, caseId: conv.caseId } as { title: string; caseId?: string } };
+    const r = revert(now, item.undo);
+    const s = r.state;
+    ops.commit({
+      profile: s.profile !== now.profile ? { ...s.profile, updatedAt: Date.now() } : undefined,
+      cases: s.cases !== now.cases ? s.cases : undefined,
+      docs: s.docs !== now.docs ? s.docs : undefined,
+    });
+    // 撤销「存进案件」时，案件里那份文件的内容也清掉
+    account.releaseFiles(r.removed.filter((x) => x.path.includes("files")).map((x) => (x.item as { id: string }).id));
+    const all = r.left.length === item.undo.length;
+    const patch: Partial<ActionItem> = r.left.length
+      ? {
+          undo: r.left,
+          note: all
+            ? "这些内容在应用之后又改过，没有改回去。如果是后面的卡片改的，请先撤销后面那张。"
+            : `有 ${r.left.length} 处在应用之后又改过，没有改回去；其余的已经撤销。`,
+        }
+      : { status: "pending", undo: undefined, shown: undefined, place: undefined, note: "已撤销，内容恢复成了应用之前的样子。" };
+    patchConv(conv.id, (c) => ({
+      ...c,
+      ...(s.conv !== now.conv ? { title: s.conv.title, caseId: s.conv.caseId } : {}),
+      messages: c.messages.map((m) => (m.id === msgId ? { ...m, actions: m.actions?.map((x) => (x.id === id ? { ...x, ...patch } : x)) } : m)),
+    }));
   }
   const skipAction = (msgId: string, id: string) =>
     conv &&
@@ -562,22 +626,32 @@ export default function Chat({
                 <div className="actions">
                   {m.actions.map((item) => {
                     const w = world(messages, m);
-                    const d = w ? describe(item.action, w) : { title: "操作", rows: [], problem: undefined };
+                    const live = w ? describe(item.action, w) : { title: "操作", rows: [], problem: undefined };
+                    // 已经应用的卡片显示应用那一刻的内容
+                    const d = item.status === "applied" && item.shown ? { ...live, ...item.shown, problem: undefined } : live;
                     const pending = item.status === "pending";
+                    const go = item.action.type === "go";
+                    const final = irreversible(item.action);
+                    const place = !final && w ? (item.place ?? placeOf(item.action, w)) : undefined;
                     return (
-                      <div key={item.id} className={`action-card ${item.status}`}>
+                      <div key={item.id} className={`action-card ${item.status}${d.danger ? " danger" : ""}`}>
                         <div className="action-head">
                           <strong>{d.title}</strong>
                           {item.status === "applied" && <span className="tag">已应用</span>}
-                          {item.status === "applied" && ops && w && (
-                            <button className="link" onClick={() => ops.open(item.place ?? placeOf(item.action, w))}>
+                          {item.status === "applied" && ops && place && (
+                            <button className="link" onClick={() => ops.open(place)}>
                               去看填好的页面 →
+                            </button>
+                          )}
+                          {item.status === "applied" && ops && Boolean(item.undo?.length) && (
+                            <button className="link undo" onClick={() => undoAction(m.id, item.id)}>
+                              撤销
                             </button>
                           )}
                           {item.status === "skipped" && <span className="tag">已忽略</span>}
                         </div>
                         {d.rows.map((r, k) => (
-                          <div className="action-row" key={k}>
+                          <div className={`action-row${r.danger ? " danger" : ""}`} key={k}>
                             <span>{r.label}</span>
                             <div>
                               {r.value}
@@ -585,22 +659,30 @@ export default function Chat({
                             </div>
                           </div>
                         ))}
-                        {pending && (item.note || d.problem) && <div className="notice">{item.note || d.problem}</div>}
+                        {pending && d.danger && !d.problem && <div className="notice">删除后不能恢复，请确认。</div>}
+                        {pending && d.problem ? <div className="notice">{d.problem}</div> : item.note ? <div className="action-note">{item.note}</div> : null}
                         {pending && ops && (
                           <div className="form-actions">
                             <button className="btn-ghost" onClick={() => skipAction(m.id, item.id)}>
                               忽略
                             </button>
-                            <button className="btn-accent" disabled={Boolean(d.problem)} onClick={() => runActions(m.id, [item.id])}>
-                              应用
-                            </button>
+                            {go ? (
+                              <button className="btn-accent" disabled={Boolean(d.problem)} onClick={() => w && ops.open(placeOf(item.action, w)!)}>
+                                打开 →
+                              </button>
+                            ) : (
+                              <button className={d.danger ? "btn-accent danger" : "btn-accent"} disabled={Boolean(d.problem)} onClick={() => runActions(m.id, [item.id])}>
+                                {d.button ?? "应用"}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
-                  {ops && m.actions.filter((x) => x.status === "pending").length > 1 && (
-                    <button className="btn-accent" onClick={() => runActions(m.id, m.actions!.map((x) => x.id))}>
+                  {/* 删除类的操作要一张一张确认，不放进「全部应用」 */}
+                  {ops && m.actions.filter((x) => x.status === "pending" && !irreversible(x.action)).length > 1 && (
+                    <button className="btn-accent" onClick={() => runActions(m.id, m.actions!.filter((x) => !irreversible(x.action)).map((x) => x.id))}>
                       全部应用
                     </button>
                   )}

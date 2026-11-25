@@ -24,12 +24,12 @@ sleep 6
 [ -n "$(on_port)" ] || { echo "测试站没起来："; tail -20 "$W/server.log"; exit 1; }
 FAILED=""
 run() { echo; echo "=== $*"; "$@" > "$W/last.out" 2>&1; CODE=$?; grep -E "^FAIL|passed, |Traceback" "$W/last.out"; [ $CODE -ne 0 ] && FAILED="$FAILED $2"; }
-for t in merge actions normalize scholar packet; do
+for t in merge actions assistant normalize scholar packet; do
   case $t in scholar) A="$W/fixtures/scholar_page.html";; packet) A="$W/unit";; *) A="";; esac
   run tests/unit/run.sh $t.test.ts $A
 done
 cd tests/e2e
-for t in api_test api_test2 t_profile t_cases t_account t_sync t_new; do run python3 $t.py; done
+for t in api_test api_test2 t_profile t_cases t_account t_sync t_new t_assistant; do run python3 $t.py; done
 if [ "$1" != "quick" ]; then for t in t_chat t_scholar; do run python3 $t.py; done; fi
 echo
 [ -z "$FAILED" ] && echo "全部通过" || { echo "有失败的：$FAILED（详细输出见 $W/last.out，每组跑完会被下一组覆盖，可单独重跑那一组）"; exit 1; }

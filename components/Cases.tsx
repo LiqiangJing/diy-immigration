@@ -20,6 +20,7 @@ import { fileIds } from "@/lib/sync";
 import { EB1A_CRITERIA } from "@/lib/claims";
 import { isPaperFile } from "@/components/PaperFetch";
 import { uid } from "@/lib/types";
+import { REPORT_TITLE } from "@/lib/docKinds";
 import type { CaseType, DocFile, ImmigrationCase } from "@/lib/types";
 
 type Props = {
@@ -34,7 +35,7 @@ type Props = {
   notableReport: string; // 由「我的档案」的重要引用分析生成，可能为空
   socReport: string; // 由「我的档案」的贡献总结生成，可能为空
   endeavorReport: string; // 由「我的档案」的拟从事事业生成，可能为空
-  initialOpen?: { caseId?: string; tab: "guide" | "files" }; // 从聊天里点「去查看」过来时，直接打开对应的案件
+  initialOpen?: { caseId?: string; tab: Tab; docId?: string }; // 从聊天里点「去查看」过来时，直接打开对应的案件（和文档）
 };
 
 type Tab = "guide" | "docs" | "files" | "checklist" | "pack";
@@ -72,17 +73,10 @@ export function caseLibrary(c: ImmigrationCase, docs: DocFile[], exceptDocId?: s
   };
 }
 
-// 用档案里的内容自动生成的文档：种类 → 生成后的标题
-const REPORT_TITLE: Record<string, string> = {
-  论文与引用记录: "Publication and Citation Record",
-  重要引用: "Notable Citations",
-  "Summary of Contributions": "Summary of Contributions",
-  "Proposed Endeavor 陈述": "Proposed Endeavor",
-};
 
 export default function Cases({ cases, setCases, docs, setDocs, profile, goProfile, petitioner, citationReport, notableReport, socReport, endeavorReport, initialOpen }: Props) {
   const [openId, setOpenId] = useState<string | null>(initialOpen?.caseId ?? null);
-  const [openDocId, setOpenDocId] = useState<string | null>(null);
+  const [openDocId, setOpenDocId] = useState<string | null>(initialOpen?.docId ?? null);
   // 刚新建、还没有内容的文档：先不存进列表，写了内容或发了消息才保存
   const [draft, setDraft] = useState<DocFile | null>(null);
   const [tab, setTab] = useState<Tab>(initialOpen?.tab ?? "guide");
