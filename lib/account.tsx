@@ -11,6 +11,8 @@ export type Me = {
   stripeEnabled: boolean;
   alipayEnabled: boolean;
   alipaySandbox: boolean;
+  /** 支付宝单笔收款上限（元），0 表示没有限制 */
+  alipayMaxCny?: number;
 };
 
 export type AccountApi = {

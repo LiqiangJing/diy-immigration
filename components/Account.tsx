@@ -110,6 +110,10 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
   ];
   const active = methods.find((m) => m.id === method)?.id ?? methods[0]?.id ?? null;
 
+  // 支付宝单笔限额：超过的档位置灰，提示分多次买小档
+  const cap = me.alipayMaxCny ?? 0;
+  const capped = active === "alipay" && cap > 0 && me.packs.some((p) => p.cny > cap);
+
   async function buy(pack: string) {
     setBusy(pack);
     setError("");
@@ -162,15 +166,21 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
       {active === "alipay" && me.alipaySandbox && (
         <div className="notice">当前是支付宝沙箱（测试）环境，请用沙箱买家账号付款，不会产生真实扣款。</div>
       )}
+      {capped && (
+        <div className="notice">
+          支付宝目前单笔最多 ¥{cap}，暂时只能买 ¥{me.packs.filter((p) => p.cny <= cap).map((p) => p.cny).join("、¥")} 这一档。
+          需要更多 credits 可以分多次购买，每次付完都会马上到账。更高的档位正在开通中。
+        </div>
+      )}
       <div className="case-list">
         {me.packs.map((p) => (
-          <button key={p.id} className="case-card" disabled={!active || busy !== ""} onClick={() => buy(p.id)}>
+          <button key={p.id} className="case-card" disabled={!active || busy !== "" || (capped && p.cny > cap)} onClick={() => buy(p.id)}>
             <strong>{p.credits} credits</strong>
             <span className="case-meta">
               {active === "alipay" ? `¥${p.cny}` : `$${p.usd}`}
               {p.credits > p.usd * 100 && ` · 多送 ${p.credits - p.usd * 100}`}
             </span>
-            <span className="tag">{busy === p.id ? "正在跳转…" : active === "alipay" ? "支付宝" : active === "stripe" ? "信用卡" : "未开通"}</span>
+            <span className="tag">{busy === p.id ? "正在跳转…" : capped && p.cny > cap ? "暂时付不了" : active === "alipay" ? "支付宝" : active === "stripe" ? "信用卡" : "未开通"}</span>
           </button>
         ))}
       </div>

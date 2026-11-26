@@ -15,6 +15,15 @@ export const alipayConfigured = () =>
 
 export const alipaySandbox = () => (process.env.ALIPAY_GATEWAY ?? "").includes("sandbox");
 
+/**
+ * 支付宝对商家账户的单笔收款上限（元）。新签约的账户资料没补全时限额很低，超过的订单在收银台会直接报错，
+ * 所以把上限写在 ALIPAY_MAX_CNY 里：超过它的档位在充值页置灰，并提示用户分多次买小档。提额后去掉这个变量即可。0 表示没有限制。
+ */
+export const alipayMaxCny = () => {
+  const n = Number(process.env.ALIPAY_MAX_CNY);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
 function sdk() {
   return new AlipaySdk({
     appId: process.env.ALIPAY_APP_ID!,

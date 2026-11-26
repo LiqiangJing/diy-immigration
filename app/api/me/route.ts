@@ -1,6 +1,6 @@
 import { getUser } from "@/lib/server/auth";
 import { history, PACKS, NOTABLE_MIN_BALANCE, SCHOLAR_COST } from "@/lib/server/credits";
-import { alipayConfigured, alipaySandbox } from "@/lib/server/alipay";
+import { alipayConfigured, alipayMaxCny, alipaySandbox } from "@/lib/server/alipay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +18,7 @@ export async function GET(req: Request) {
       stripeEnabled: Boolean(process.env.STRIPE_SECRET_KEY),
       alipayEnabled: alipayConfigured(),
       alipaySandbox: alipaySandbox(),
+      alipayMaxCny: alipayMaxCny(),
     },
     { headers: { "Cache-Control": "no-store" } },
   );
