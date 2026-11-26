@@ -585,6 +585,12 @@ export default function Chat({
               </button>
             ))}
           </div>
+          {/* 没登录的访客：一眼看明白这是个什么网站、怎么收费 */}
+          {!intro && account.me && !account.me.user && (
+            <p className="hero-about">
+              在线软件工具 · 按用量付费，注册送试用额度 · <a href="/about">产品介绍与价格</a>
+            </p>
+          )}
         </div>
         <div className="composer-wrap">
           {composer}

@@ -415,6 +415,12 @@ button:disabled { cursor: not-allowed; }
 .legal ul { padding-left: 22px; margin: 6px 0; }
 .legal li { margin: 4px 0; }
 .legal a { color: var(--accent); }
+.price-table { border-collapse: collapse; width: 100%; max-width: 520px; margin: 10px 0 14px; font-size: 14.5px; }
+.price-table th, .price-table td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
+.price-table th { background: var(--card); font-weight: 600; }
+.about-qr { width: 180px; height: 180px; border: 1px solid var(--line); border-radius: 12px; background: #fff; display: block; }
+.hero .hero-about { font-size: 13px; margin: 18px 0 0; }
+.hero-about a { color: var(--accent); }
 .legal-nav { display: flex; justify-content: space-between; font-size: 13.5px; margin: 0; }
 .legal-date { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
 .legal-links { font-size: 12px; color: var(--muted); padding: 0 10px 6px; }
