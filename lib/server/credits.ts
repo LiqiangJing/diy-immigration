@@ -1,3 +1,5 @@
+import { loyaltyBonusAt } from "@/lib/loyalty";
+import type { LoyaltyTier } from "@/lib/loyalty";
 import { db } from "./db";
 
 /**
@@ -40,6 +42,27 @@ export const PACKS = [
   { id: "p50", usd: 50, cny: 360, credits: 6000 },
   { id: "p100", usd: 100, cny: 720, credits: 13000 },
 ] as const;
+
+/** 累计赠送只算最小的这一档 */
+export const BASE_PACK = PACKS[0];
+
+/**
+ * 小额档累计赠送：最小档买到第几笔时额外送多少。数字是从大档位算出来的，
+ * 所以分多次买小档，到手的 credits 和一次买对应的大档一样多（4 笔 = $20 档，10 笔 = $50 档，20 笔 = $100 档）。
+ * 支付宝单笔限额低、只能卖小档的时候，靠它保留原来“多买多送”的优惠。
+ */
+export const LOYALTY: LoyaltyTier[] = (() => {
+  let given = 0;
+  return PACKS.slice(1).map((p) => {
+    const count = p.usd / BASE_PACK.usd;
+    const total = p.credits - count * BASE_PACK.credits;
+    const tier = { count, bonus: total - given };
+    given = total;
+    return tier;
+  });
+})();
+/** 买满这么多笔算一轮，之后从头累计 */
+export const LOYALTY_CYCLE = PACKS[PACKS.length - 1].usd / BASE_PACK.usd;
 
 export type Usage = {
   input_tokens?: number | null;
@@ -117,4 +140,23 @@ export function grantSignupBonus(userId: string): boolean {
     if (n >= SIGNUP_DAILY_LIMIT) return false;
     return addCredits(userId, SIGNUP_BONUS, "注册赠送", `signup:${userId}`);
   })();
+}
+
+/** 这个用户已经付清了几笔最小档的订单 */
+export function loyaltyPaid(userId: string): number {
+  const { n } = db()
+    .prepare("SELECT COUNT(*) AS n FROM orders WHERE user_id = ? AND pack = ? AND status = 'paid'")
+    .get(userId, BASE_PACK.id) as { n: number };
+  return n;
+}
+
+/**
+ * 一笔最小档的订单刚付清时调用：累计笔数到了赠送的门槛就把赠送入账。
+ * 按订单号幂等，同一笔订单最多送一次。返回送了多少（没到门槛是 0）。
+ */
+export function grantLoyalty(userId: string, orderNo: string): number {
+  const n = loyaltyPaid(userId);
+  const bonus = loyaltyBonusAt(n, LOYALTY, LOYALTY_CYCLE);
+  if (!bonus) return 0;
+  return addCredits(userId, bonus, `累计充值满 ${((n - 1) % LOYALTY_CYCLE) + 1} 笔赠送`, `loyalty:${orderNo}`) ? bonus : 0;
 }

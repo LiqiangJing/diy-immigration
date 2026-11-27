@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { AlipaySdk } from "alipay-sdk";
 import { db } from "./db";
-import { addCredits, PACKS } from "./credits";
+import { addCredits, BASE_PACK, grantLoyalty, PACKS } from "./credits";
 
 /**
  * 支付宝直连（电脑网站支付 / 手机网站支付）。
@@ -17,7 +17,7 @@ export const alipaySandbox = () => (process.env.ALIPAY_GATEWAY ?? "").includes("
 
 /**
  * 支付宝对商家账户的单笔收款上限（元）。新签约的账户资料没补全时限额很低，超过的订单在收银台会直接报错，
- * 所以把上限写在 ALIPAY_MAX_CNY 里：超过它的档位在充值页置灰，并提示用户分多次买小档。提额后去掉这个变量即可。0 表示没有限制。
+ * 所以把上限写在 ALIPAY_MAX_CNY 里：超过它的档位不在充值页和价格页显示，并提示用户分多次买小档（累计有赠送）。提额后去掉这个变量即可。0 表示没有限制。
  */
 export const alipayMaxCny = () => {
   const n = Number(process.env.ALIPAY_MAX_CNY);
@@ -84,8 +84,14 @@ export function handleAlipayNotify(params: Record<string, string>): boolean {
       console.error("[alipay] 订单的档位已经不存在，没有入账", params.out_trade_no, order.pack);
       return false;
     }
-    addCredits(order.user_id, pack.credits, `支付宝充值 ¥${order.amount}`, `alipay:${params.out_trade_no}`);
-    d.prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE order_no = ?").run(Date.now(), params.out_trade_no);
+    d.transaction(() => {
+      addCredits(order.user_id, pack.credits, `支付宝充值 ¥${order.amount}`, `alipay:${params.out_trade_no}`);
+      // 只有这一次把订单从未付改成已付时才算累计赠送：支付宝重发通知不会重复送，也不会按后来的笔数错送
+      const r = d
+        .prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE order_no = ? AND status != 'paid'")
+        .run(Date.now(), params.out_trade_no);
+      if (r.changes === 1 && pack.id === BASE_PACK.id) grantLoyalty(order.user_id, params.out_trade_no);
+    })();
   }
   return true;
 }

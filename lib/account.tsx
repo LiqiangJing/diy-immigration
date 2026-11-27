@@ -13,6 +13,7 @@ export type Me = {
   alipaySandbox: boolean;
   /** 支付宝单笔收款上限（元），0 表示没有限制 */
   alipayMaxCny?: number;
+  loyalty?: { pack: string; tiers: { count: number; bonus: number }[]; cycle: number; paid: number };
 };
 
 export type AccountApi = {

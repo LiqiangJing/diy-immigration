@@ -467,3 +467,8 @@ button:disabled { cursor: not-allowed; }
 .tips a { color: var(--accent); }
 .tips pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; }
 .card small.for-type { color: var(--text); background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; }
+
+/* 充值页：小额档累计赠送的说明和进度 */
+.loyalty { margin: 12px 0 18px; padding: 12px 14px; background: var(--accent-soft); border-radius: 10px; font-size: 14px; line-height: 1.7; }
+.loyalty p { margin: 4px 0 0; }
+.loyalty .loyalty-progress b { color: var(--accent); }

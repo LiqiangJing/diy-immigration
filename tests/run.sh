@@ -24,7 +24,7 @@ sleep 6
 [ -n "$(on_port)" ] || { echo "测试站没起来："; tail -20 "$W/server.log"; exit 1; }
 FAILED=""
 run() { echo; echo "=== $*"; "$@" > "$W/last.out" 2>&1; CODE=$?; grep -E "^FAIL|passed, |Traceback" "$W/last.out"; [ $CODE -ne 0 ] && FAILED="$FAILED $2"; }
-for t in merge actions assistant price normalize scholar packet; do
+for t in merge actions assistant price loyalty alipay normalize scholar packet; do
   case $t in scholar) A="$W/fixtures/scholar_page.html";; packet) A="$W/unit";; *) A="";; esac
   run tests/unit/run.sh $t.test.ts $A
 done

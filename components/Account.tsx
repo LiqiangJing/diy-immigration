@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loyaltyNext } from "@/lib/loyalty";
 import { useAccount } from "@/lib/account";
 
 /** 设置或修改登录密码（可选；不设就一直用邮箱验证码登录） */
@@ -110,9 +111,15 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
   ];
   const active = methods.find((m) => m.id === method)?.id ?? methods[0]?.id ?? null;
 
-  // 支付宝单笔限额：超过的档位置灰，提示分多次买小档
+  // 支付宝单笔限额：超过的档位不显示，提示分多次买小档
   const cap = me.alipayMaxCny ?? 0;
   const capped = active === "alipay" && cap > 0 && me.packs.some((p) => p.cny > cap);
+  const packs = capped ? me.packs.filter((p) => p.cny <= cap) : me.packs;
+
+  // 小额档累计赠送：规则和这个用户的进度
+  const loyalty = active === "alipay" && me.loyalty?.tiers.length ? me.loyalty : null;
+  const basePack = loyalty && me.packs.find((p) => p.id === loyalty.pack);
+  const next = loyalty && loyaltyNext(loyalty.paid, loyalty.tiers, loyalty.cycle);
 
   async function buy(pack: string) {
     setBusy(pack);
@@ -168,22 +175,41 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
       )}
       {capped && (
         <div className="notice">
-          支付宝目前单笔最多 ¥{cap}，暂时只能买 ¥{me.packs.filter((p) => p.cny <= cap).map((p) => p.cny).join("、¥")} 这一档。
-          需要更多 credits 可以分多次购买，每次付完都会马上到账。更高的档位正在开通中。
+          支付宝目前单笔最多 ¥{cap}，所以暂时只开放 ¥{packs.map((p) => p.cny).join("、¥")} 这一档。需要更多 credits
+          可以多次购买，每次付完马上到账。
         </div>
       )}
       <div className="case-list">
-        {me.packs.map((p) => (
-          <button key={p.id} className="case-card" disabled={!active || busy !== "" || (capped && p.cny > cap)} onClick={() => buy(p.id)}>
+        {packs.map((p) => (
+          <button key={p.id} className="case-card" disabled={!active || busy !== ""} onClick={() => buy(p.id)}>
             <strong>{p.credits} credits</strong>
             <span className="case-meta">
               {active === "alipay" ? `¥${p.cny}` : `$${p.usd}`}
               {p.credits > p.usd * 100 && ` · 多送 ${p.credits - p.usd * 100}`}
             </span>
-            <span className="tag">{busy === p.id ? "正在跳转…" : capped && p.cny > cap ? "暂时付不了" : active === "alipay" ? "支付宝" : active === "stripe" ? "信用卡" : "未开通"}</span>
+            <span className="tag">{busy === p.id ? "正在跳转…" : active === "alipay" ? "支付宝" : active === "stripe" ? "信用卡" : "未开通"}</span>
           </button>
         ))}
       </div>
+      {loyalty && basePack && (
+        <div className="loyalty">
+          <strong>多买多送</strong>
+          <p>
+            ¥{basePack.cny} 这一档按累计购买的笔数赠送：
+            {loyalty.tiers.map((t, i) => `满 ${t.count} 笔${i ? "再" : ""}送 ${t.bonus} credits`).join("，")}
+            。付完那一笔时自动到账，满 {loyalty.cycle} 笔后重新累计。
+          </p>
+          <p className="loyalty-progress">
+            你已经买了 {loyalty.paid} 笔
+            {next && (
+              <>
+                ，再买 <b>{next.need}</b> 笔送 <b>{next.bonus}</b> credits
+              </>
+            )}
+            。
+          </p>
+        </div>
+      )}
       {!active && <div className="notice">充值功能还没有开通。</div>}
       {error && <div className="notice">{error}</div>}
 

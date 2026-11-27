@@ -1,5 +1,9 @@
 import Legal from "@/components/Legal";
-import { PACKS, SCHOLAR_COST, SIGNUP_BONUS } from "@/lib/server/credits";
+import { alipayMaxCny } from "@/lib/server/alipay";
+import { BASE_PACK, LOYALTY, LOYALTY_CYCLE, PACKS, SCHOLAR_COST, SIGNUP_BONUS } from "@/lib/server/credits";
+
+// 档位随支付宝的单笔限额变（服务器上的配置），所以每次访问时生成，不在构建时定死
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "产品介绍与价格 · DIY Immigration",
@@ -8,6 +12,8 @@ export const metadata = {
 
 /** 公开的产品介绍页：这个网站是什么、卖的是什么、多少钱、怎么退款、怎么联系。不登录也能看。 */
 export default function About() {
+  const cap = alipayMaxCny();
+  const packs = cap ? PACKS.filter((p) => p.cny <= cap) : PACKS;
   return (
     <Legal title="产品介绍与价格" updated="2026 年 11 月 26 日">
       <h2>一、DIY Immigration 是什么</h2>
@@ -44,7 +50,7 @@ export default function About() {
           </tr>
         </thead>
         <tbody>
-          {PACKS.map((p) => (
+          {packs.map((p) => (
             <tr key={p.id}>
               <td>{p.credits} credits</td>
               <td>¥{p.cny}</td>
@@ -56,6 +62,14 @@ export default function About() {
           ))}
         </tbody>
       </table>
+      {packs.length < PACKS.length && (
+        <p>支付宝目前单笔最多 ¥{cap}，所以暂时只开放这一档，可以多次购买，每次付完马上到账。</p>
+      )}
+      <p>
+        <strong>多买多送：</strong>¥{BASE_PACK.cny} 这一档按累计购买的笔数赠送：
+        {LOYALTY.map((t, i) => `满 ${t.count} 笔${i ? "再" : ""}送 ${t.bonus} credits`).join("，")}
+        。付完那一笔时自动到账，满 {LOYALTY_CYCLE} 笔后重新累计。
+      </p>
       <p>Credits 的消耗按每次实际用量计算，内容越长消耗越多。大致范围：</p>
       <ul>
         <li>聊天提问：每条通常十几到几十个 credits；</li>

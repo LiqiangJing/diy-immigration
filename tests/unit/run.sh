@@ -8,5 +8,5 @@ W="${TEST_WORK:-$ROOT/tests/.work}"
 mkdir -p "$W/unit"
 T="$1"; shift
 npx --yes esbuild@0.24.2 "$HERE/$T" --bundle --platform=node --format=cjs --log-level=warning \
-  --alias:@="$ROOT" --external:pdf-lib --outfile="$W/unit/$(basename "$T" .ts).cjs"
+  --alias:@="$ROOT" --external:pdf-lib --external:better-sqlite3 --outfile="$W/unit/$(basename "$T" .ts).cjs"
 NODE_PATH="$ROOT/node_modules" node "$W/unit/$(basename "$T" .ts).cjs" "$@"
