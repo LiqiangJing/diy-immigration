@@ -62,9 +62,6 @@ export default function About() {
           ))}
         </tbody>
       </table>
-      {packs.length < PACKS.length && (
-        <p>支付宝目前单笔最多 ¥{cap}，所以暂时只开放这一档，可以多次购买，每次付完马上到账。</p>
-      )}
       <p>
         <strong>多买多送：</strong>¥{BASE_PACK.cny} 这一档按累计购买的笔数赠送：
         {LOYALTY.map((t, i) => `满 ${t.count} 笔${i ? "再" : ""}送 ${t.bonus} credits`).join("，")}

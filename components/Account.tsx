@@ -173,12 +173,6 @@ export default function Account({ onLogin, onLogout }: { onLogin: () => void; on
       {active === "alipay" && me.alipaySandbox && (
         <div className="notice">当前是支付宝沙箱（测试）环境，请用沙箱买家账号付款，不会产生真实扣款。</div>
       )}
-      {capped && (
-        <div className="notice">
-          支付宝目前单笔最多 ¥{cap}，所以暂时只开放 ¥{packs.map((p) => p.cny).join("、¥")} 这一档。需要更多 credits
-          可以多次购买，每次付完马上到账。
-        </div>
-      )}
       <div className="case-list">
         {packs.map((p) => (
           <button key={p.id} className="case-card" disabled={!active || busy !== ""} onClick={() => buy(p.id)}>
