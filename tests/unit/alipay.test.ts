@@ -13,7 +13,7 @@ process.env.ALIPAY_PRIVATE_KEY = app.privateKey.export({ type: "pkcs1", format: 
 process.env.ALIPAY_PUBLIC_KEY = fake.publicKey.export({ type: "spki", format: "der" }).toString("base64");
 delete process.env.ALIPAY_GATEWAY;
 
-import { handleAlipayNotify } from "@/lib/server/alipay";
+import { createAlipayOrder, handleAlipayNotify } from "@/lib/server/alipay";
 import { db } from "@/lib/server/db";
 
 let pass = 0, fail = 0;
@@ -30,6 +30,13 @@ function notice(no: string, amount: string, status = "TRADE_SUCCESS", key = fake
   const text = Object.keys(p).sort().map((k) => `${k}=${p[k]}`).join("&");
   return { ...p, sign_type: "RSA2", sign: createSign("RSA-SHA256").update(text, "utf8").sign(key, "base64") };
 }
+
+// 下单：电脑和手机都用电脑网站支付的接口（手机网站支付没有签约，调了会报权限不足）
+const url = new URL(createAlipayOrder("u1", "p5", "https://example.com")!);
+const biz = JSON.parse(url.searchParams.get("biz_content")!);
+ok("alipay: checkout always uses the page-pay interface the account is signed for", url.searchParams.get("method") === "alipay.trade.page.pay" && biz.product_code === "FAST_INSTANT_TRADE_PAY" && biz.total_amount === "36.00", [url.searchParams.get("method"), biz]);
+ok("alipay: checkout saves a pending order and an unknown pack gives no link", (d.prepare("SELECT status FROM orders WHERE order_no = ?").get(biz.out_trade_no) as { status: string }).status === "pending" && createAlipayOrder("u1", "nope", "https://example.com") === null);
+d.prepare("DELETE FROM orders WHERE order_no = ?").run(biz.out_trade_no);
 
 order("a1", "p5", "36.00");
 ok("alipay: a forged notification is rejected and credits nothing", handleAlipayNotify(notice("a1", "36.00", "TRADE_SUCCESS", app.privateKey)) === false && credits() === 0);

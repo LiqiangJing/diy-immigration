@@ -4,7 +4,9 @@ import { db } from "./db";
 import { addCredits, BASE_PACK, grantLoyalty, PACKS } from "./credits";
 
 /**
- * 支付宝直连（电脑网站支付 / 手机网站支付）。
+ * 支付宝直连（电脑网站支付）。电脑和手机浏览器都走同一个下单接口 alipay.trade.page.pay：
+ * 商家账户只签了电脑网站支付，手机网站支付的接口（alipay.trade.wap.pay）没有权限，调了会在支付宝那边直接报
+ * “ISV权限不足”；支付宝的接入文档也写明这个产品在手机浏览器里用的是同一个接口。
  * 沙箱测试时把 ALIPAY_GATEWAY 设为沙箱网关；正式环境不设，走默认的正式网关。
  */
 
@@ -36,7 +38,7 @@ function sdk() {
 }
 
 /** 创建一笔订单，返回支付宝收银台的跳转地址 */
-export function createAlipayOrder(userId: string, packId: string, origin: string, mobile: boolean): string | null {
+export function createAlipayOrder(userId: string, packId: string, origin: string): string | null {
   const pack = PACKS.find((p) => p.id === packId);
   if (!pack) return null;
   const orderNo = `D${Date.now()}${randomBytes(5).toString("hex")}`;
@@ -44,12 +46,12 @@ export function createAlipayOrder(userId: string, packId: string, origin: string
   db()
     .prepare("INSERT INTO orders (order_no, user_id, pack, amount, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)")
     .run(orderNo, userId, pack.id, amount, Date.now());
-  return sdk().pageExecute(mobile ? "alipay.trade.wap.pay" : "alipay.trade.page.pay", "GET", {
+  return sdk().pageExecute("alipay.trade.page.pay", "GET", {
     notifyUrl: `${origin}/api/billing/alipay/notify`,
     returnUrl: `${origin}/?paid=1`,
     bizContent: {
       out_trade_no: orderNo,
-      product_code: mobile ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY",
+      product_code: "FAST_INSTANT_TRADE_PAY",
       subject: `DIY Immigration ${pack.credits} credits`,
       total_amount: amount,
     },

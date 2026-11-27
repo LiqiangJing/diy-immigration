@@ -19,9 +19,8 @@ export async function POST(req: Request) {
     return Response.json({ error: `支付宝目前单笔最多 ¥${max}，这一档暂时付不了。请先买小额档位，可以多买几次。` }, { status: 400 });
   }
   const origin = process.env.APP_URL || req.headers.get("origin") || new URL(req.url).origin;
-  const mobile = /Mobile|Android|iPhone|iPad/i.test(req.headers.get("user-agent") ?? "");
   try {
-    const url = createAlipayOrder(user.id, String(body?.pack ?? ""), origin, mobile);
+    const url = createAlipayOrder(user.id, String(body?.pack ?? ""), origin);
     if (!url) return Response.json({ error: "充值档位不存在。" }, { status: 400 });
     return Response.json({ url });
   } catch (e) {
